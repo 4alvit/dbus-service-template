@@ -45,7 +45,7 @@ bash setup INSTALL
 ## Project Structure
 
 ```
-{{ cookiecutter.project_slug }/
+{{ project_slug }}/
 ├── .github/workflows/     # CI/CD pipelines
 ├── docs/                  # Documentation
 ├── packaging/             # Venus OS IPK packaging
@@ -83,7 +83,7 @@ Copy `config.example.yaml` to `config.yaml` and adjust:
 mqtt:
   broker: "192.168.1.100"
   topic_prefix: "{{ topic_prefix }}"
-  ha_discovery: {% if cookiecutter.include_ha_discovery %}true{% else %}false{% endif %}
+  ha_discovery: {% if include_ha_discovery %}true{% else %}false{% endif %}
 
 device:
   product_name: "{{ project_name }}"
@@ -108,20 +108,20 @@ Standard paths (auto-created):
 - `/CustomName` - User-editable name
 
 Device-type specific paths:
-{% if cookiecutter.device_type == "battery" %}
+{% if device_type == "battery" %}
 - `/Soc` - State of Charge (%)
 - `/Dc/0/Voltage`, `/Dc/0/Current`, `/Dc/0/Power`
 - `/Capacity`, `/TimeRemaining`
 - `/Alarm/*` - Alarm states
-{% elif cookiecutter.device_type == "pv_inverter" %}
+{% elif device_type == "pv_inverter" %}
 - `/Ac/Power`, `/Ac/L1/Voltage`, `/Ac/L1/Current`
 - `/Ac/Energy/Forward`
-{% elif cookiecutter.device_type == "grid_meter" %}
+{% elif device_type == "grid_meter" %}
 - `/Ac/Power`, `/Ac/L1/Voltage`, `/Ac/L1/Current`
 - `/Ac/Energy/Forward`, `/Ac/Energy/Reverse`
-{% elif cookiecutter.device_type == "tank" %}
+{% elif device_type == "tank" %}
 - `/Level`, `/Capacity`, `/Remaining`
-{% elif cookiecutter.device_type == "temperature" %}
+{% elif device_type == "temperature" %}
 - `/Temperature`
 {% else %}
 - `/Value`, `/Unit`
@@ -129,7 +129,7 @@ Device-type specific paths:
 
 ## DVCC Integration
 
-{% if cookiecutter.include_dvcc %}
+{% if include_dvcc %}
 Dynamic Voltage/Current Control paths:
 - `/Dc/0/MaxChargeCurrent`
 - `/Dc/0/MaxDischargeCurrent`
@@ -155,7 +155,7 @@ Default mappings (customizable in code):
 
 SET topics (e.g., `topic/set`) allow MQTT → D-Bus control.
 
-{% if cookiecutter.include_ha_discovery %}
+{% if include_ha_discovery %}
 ## Home Assistant Discovery
 
 Auto-publishes sensor configs on connect:
