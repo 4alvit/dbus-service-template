@@ -179,3 +179,8 @@ mypy src/{{ module_name }}
 ## License
 
 {{ license_type }} License - see [LICENSE](LICENSE)
+
+## Documentation
+
+- [System Architecture](./.github/docs/system-architecture.md) - Data flow diagrams, runbook
+- [ADR](.github/docs/adr-001.md) - Architecture Decision Records
