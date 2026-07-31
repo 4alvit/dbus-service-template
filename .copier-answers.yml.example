@@ -1,0 +1,24 @@
+# Example Copier answers - copy to .copier-answers.yml for non-interactive updates
+# Generated with: copier copy gh:4alvit/dbus-service-template my-project --defaults
+
+project_name: "My Battery Monitor"
+project_description: "JBD BMS to Venus OS D-Bus bridge"
+project_slug: "my-battery-monitor"
+module_name: "my_battery_monitor"
+class_name: "MyBatteryMonitorService"
+device_type: "battery"
+service_instance: 0
+service_name: "com.victronenergy.battery"
+mqtt_enabled: true
+mqtt_broker_default: "127.0.0.1"
+mqtt_port_default: 1883
+topic_prefix: "battery"
+venus_os_package: true
+github_org: "4alvit"
+author_name: "Your Name"
+author_email: "you@example.com"
+license_type: "MIT"
+python_version: "3.11"
+include_ha_discovery: false
+include_dvcc: true
+include_gui: false

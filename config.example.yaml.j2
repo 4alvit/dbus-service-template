@@ -1,0 +1,66 @@
+# {{ project_name }} Configuration
+# Copy to config.yaml and adjust as needed
+
+# MQTT Broker Configuration
+mqtt:
+  broker: "{{ mqtt_broker_default }}"
+  port: {{ mqtt_port_default }}
+  username: ""  # Optional
+  password: ""  # Optional
+  topic_prefix: "{{ topic_prefix }}"
+  client_id: "{{ module_name }}"
+  keepalive: 60
+  clean_session: true
+  use_tls: false
+  ca_cert: ""
+  client_cert: ""
+  client_key: ""
+  qos: 1
+
+  # Home Assistant MQTT Discovery
+  ha_discovery: {% if cookiecutter.include_ha_discovery %}true{% else %}false{% endif %}
+  ha_device_name: "{{ project_name }}"
+
+# Device Identification
+device:
+  product_id: 65535
+  product_name: "{{ project_name }}"
+  model: "{{ module_name }}"
+  firmware_version: "0.1.0"
+  hardware_version: "1.0"
+  serial_number: "00000000"
+  custom_name: ""
+
+# DVCC (Dynamic Voltage/Current Control) - Venus OS
+dvcc:
+  enabled: {% if cookiecutter.include_dvcc %}true{% else %}false{% endif %}
+  max_charge_current: 100.0
+  max_discharge_current: 100.0
+  max_charge_voltage: 56.0
+  charge_voltage: 55.2
+  allow_charge: true
+  allow_discharge: true
+
+# Alarm Thresholds
+alarms:
+  low_soc: 10.0
+  low_soc_critical: 5.0
+  high_temperature: 45.0
+  high_temperature_critical: 55.0
+  low_temperature: 0.0
+  low_temperature_critical: -10.0
+  cell_imbalance: 0.1
+  cell_imbalance_critical: 0.2
+
+# Device-specific settings
+device_type: "{{ device_type }}"
+instance: {{ service_instance }}
+
+# Initial values (used on startup before real data arrives)
+initial_soc: 50.0
+capacity_ah: 100.0
+max_power: 5000.0
+
+# Logging
+log_level: "INFO"
+log_format: "%(asctime)s %(levelname)s %(name)s %(message)s"

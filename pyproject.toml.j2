@@ -1,0 +1,94 @@
+[project]
+name = "{{ project_slug }}"
+version = "0.1.0"
+description = "{{ project_description }}"
+readme = "README.md"
+license = {text = "{{ license_type }}"}
+requires-python = ">=3.11"
+dependencies = [
+    "paho-mqtt>=2.0",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "pyyaml>=6.0",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "pytest-mock>=3.14",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "pre-commit>=3.7",
+]
+velib = [
+    # velib-python not on PyPI - install via Venus OS or git
+    # pip install git+https://github.com/victronenergy/velib_python.git
+]
+
+[project.urls]
+Homepage = "https://github.com/{{ github_org }}/{{ project_slug }}"
+Repository = "https://github.com/{{ github_org }}/{{ project_slug }}"
+Issues = "https://github.com/{{ github_org }}/{{ project_slug }}/issues"
+
+[build-system]
+requires = ["setuptools>=68", "wheel", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["{{ module_name }}*"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.entry-points]
+console_scripts = [
+    "{{ module_name }} = {{ module_name }}.__main__:main",
+]
+
+[tool.setuptools_scm]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+addopts = "-v --strict-markers --tb=short --cov={{ module_name }} --cov-report=term-missing"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+select = ["E", "F", "I", "W", "UP", "B", "C4", "SIM", "T20"]
+ignore = ["S101", "B008", "T201", "T203"]
+per-file-ignores = { "tests/*" = ["S101", "B011", "T201"] }
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["dbus", "dbus.*", "gi", "gi.*", "velib*", "vedbus*"]
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["src/{{ module_name }}"]
+omit = ["tests/*", "*/conftest.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+]
+show_missing = true

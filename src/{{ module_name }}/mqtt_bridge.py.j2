@@ -1,0 +1,459 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+MQTT Bridge for {{ class_name }}
+
+Async MQTT client with reconnection, topic mapping, and D-Bus integration.
+Supports bidirectional MQTT <-> D-Bus communication.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import ssl
+from typing import Any, Callable, Dict, List, Optional
+
+import paho.mqtt.client as mqtt
+
+from .config import MQTTConfig
+from .service import {{ class_name }}Service
+
+logger = logging.getLogger(__name__)
+
+
+class MQTTBridge:
+    """
+    MQTT to D-Bus bridge with async connection management.
+
+    Features:
+    - Automatic reconnection with exponential backoff
+    - Topic-based message routing to D-Bus paths
+    - D-Bus value changes published to MQTT
+    - Home Assistant MQTT discovery (optional)
+    - TLS/SSL support
+    """
+
+    def __init__(
+        self,
+        config: MQTTConfig,
+        dbus_service: {{ class_name }}Service,
+    ) -> None:
+        self.config = config
+        self.db = dbus_service
+
+        self._client: Optional[mqtt.Client] = None
+        self._connected = False
+        self._reconnect_task: Optional[asyncio.Task] = None
+        self._running = False
+
+        # Topic mappings: MQTT topic -> D-Bus path
+        self._topic_to_path: Dict[str, str] = {}
+        self._path_to_topic: Dict[str, str] = {}
+
+        # Message handlers
+        self._message_handlers: Dict[str, Callable] = {}
+
+        # Statistics
+        self._msg_received = 0
+        self._msg_sent = 0
+        self._errors = 0
+
+        self._setup_topic_mappings()
+
+    def _setup_topic_mappings(self) -> None:
+        """Configure default MQTT topic to D-Bus path mappings."""
+        prefix = self.config.topic_prefix
+        instance = f"{self.db.device_instance:03d}"
+
+        # Default mappings based on device type
+        if self.db.device_type == "battery":
+            self._topic_to_path = {
+                f"{prefix}/voltage": "/Dc/0/Voltage",
+                f"{prefix}/current": "/Dc/0/Current",
+                f"{prefix}/power": "/Dc/0/Power",
+                f"{prefix}/soc": "/Soc",
+                f"{prefix}/temperature": "/Dc/0/Temperature",
+                f"{prefix}/capacity": "/Capacity",
+                f"{prefix}/cell_voltage/{instance}": "/CellVoltages",
+                f"{prefix}/alarm/{instance}": "/Alarm",
+            }
+        elif self.db.device_type == "pv_inverter":
+            self._topic_to_path = {
+                f"{prefix}/ac_power": "/Ac/Power",
+                f"{prefix}/ac_voltage": "/Ac/L1/Voltage",
+                f"{prefix}/ac_current": "/Ac/L1/Current",
+                f"{prefix}/ac_frequency": "/Ac/Frequency",
+                f"{prefix}/energy_forward": "/Ac/Energy/Forward",
+            }
+        elif self.db.device_type == "grid_meter":
+            self._topic_to_path = {
+                f"{prefix}/power": "/Ac/Power",
+                f"{prefix}/voltage": "/Ac/L1/Voltage",
+                f"{prefix}/current": "/Ac/L1/Current",
+                f"{prefix}/energy_forward": "/Ac/Energy/Forward",
+                f"{prefix}/energy_reverse": "/Ac/Energy/Reverse",
+            }
+        elif self.db.device_type == "tank":
+            self._topic_to_path = {
+                f"{prefix}/level": "/Level",
+                f"{prefix}/fluid_type": "/FluidType",
+                f"{prefix}/capacity": "/Capacity",
+                f"{prefix}/remaining": "/Remaining",
+            }
+        else:
+            # Generic mapping
+            self._topic_to_path = {
+                f"{prefix}/value": "/Value",
+                f"{prefix}/unit": "/Unit",
+            }
+
+        # Build reverse mapping for publishing
+        self._path_to_topic = {v: k for k, v in self._topic_to_path.items()}
+
+        logger.debug(f"Topic mappings: {self._topic_to_path}")
+
+    def set_custom_mapping(self, topic: str, dbus_path: str) -> None:
+        """Add or override a topic to D-Bus path mapping."""
+        self._topic_to_path[topic] = dbus_path
+        self._path_to_topic[dbus_path] = topic
+        logger.debug(f"Added mapping: {topic} -> {dbus_path}")
+
+    def connect(self) -> None:
+        """Connect to MQTT broker (blocking)."""
+        if self._running:
+            logger.warning("Already connected")
+            return
+
+        self._running = True
+        self._create_client()
+
+        try:
+            self._client.connect(
+                self.config.broker,
+                self.config.port,
+                keepalive=self.config.keepalive,
+            )
+            self._client.loop_start()
+            logger.info(f"MQTT connected to {self.config.broker}:{self.config.port}")
+        except Exception as e:
+            logger.error(f"MQTT connection failed: {e}")
+            self._schedule_reconnect()
+            raise
+
+    async def connect_async(self) -> None:
+        """Connect to MQTT broker (async)."""
+        self.connect()
+
+    def _create_client(self) -> None:
+        """Create and configure MQTT client."""
+        client_id = f"{self.config.client_id}_{self.db.device_instance}"
+
+        self._client = mqtt.Client(
+            client_id=client_id,
+            protocol=mqtt.MQTTv5,
+            clean_session=self.config.clean_session,
+        )
+
+        # Authentication
+        if self.config.username and self.config.password:
+            self._client.username_pw_set(
+                self.config.username,
+                password=self.config.password,
+            )
+
+        # TLS/SSL
+        if self.config.use_tls:
+            context = ssl.create_default_context()
+            if self.config.ca_cert:
+                context.load_verify_locations(self.config.ca_cert)
+            if self.config.client_cert and self.config.client_key:
+                context.load_cert_chain(
+                    self.config.client_cert,
+                    keyfile=self.config.client_key,
+                )
+            self._client.tls_set_context(context)
+
+        # Callbacks
+        self._client.on_connect = self._on_connect
+        self._client.on_disconnect = self._on_disconnect
+        self._client.on_message = self._on_message
+        self._client.on_publish = self._on_publish
+        self._client.on_subscribe = self._on_subscribe
+
+    def _on_connect(
+        self,
+        client: mqtt.Client,
+        userdata: Any,
+        flags: Dict,
+        rc: int,
+        properties: Any = None,
+    ) -> None:
+        """MQTT on_connect callback."""
+        if rc == 0:
+            self._connected = True
+            logger.info(f"MQTT connected (result code: {rc})")
+
+            # Subscribe to all mapped topics
+            for topic in self._topic_to_path.keys():
+                client.subscribe(topic, qos=self.config.qos)
+                logger.debug(f"Subscribed: {topic}")
+
+            # Subscribe to set topics (for D-Bus -> MQTT)
+            for topic in self._topic_to_path.keys():
+                set_topic = f"{topic}/set"
+                client.subscribe(set_topic, qos=self.config.qos)
+                logger.debug(f"Subscribed (set): {set_topic}")
+
+            # Register with Home Assistant discovery if enabled
+            if self.config.ha_discovery:
+                self._publish_ha_discovery()
+
+        else:
+            self._connected = False
+            logger.error(f"MQTT connection failed: {rc}")
+            self._errors += 1
+
+    def _on_disconnect(
+        self,
+        client: mqtt.Client,
+        userdata: Any,
+        rc: int,
+        properties: Any = None,
+    ) -> None:
+        """MQTT on_disconnect callback."""
+        self._connected = False
+        logger.warning(f"MQTT disconnected (code: {rc})")
+
+        if self._running and rc != 0:
+            self._schedule_reconnect()
+
+    def _on_message(
+        self,
+        client: mqtt.Client,
+        userdata: Any,
+        msg: mqtt.MQTTMessage,
+    ) -> None:
+        """MQTT on_message callback."""
+        self._msg_received += 1
+        topic = msg.topic
+        payload = msg.payload.decode("utf-8").strip()
+
+        logger.debug(f"MQTT received: {topic} = {payload}")
+
+        # Handle /set topics (commands from MQTT to D-Bus)
+        if topic.endswith("/set"):
+            base_topic = topic[:-4]
+            if base_topic in self._topic_to_path:
+                self._handle_set_command(base_topic, payload)
+            return
+
+        # Handle regular telemetry topics
+        if topic in self._topic_to_path:
+            self._handle_telemetry(topic, payload)
+
+    def _handle_set_command(self, topic: str, payload: str) -> None:
+        """Handle incoming SET command from MQTT."""
+        dbus_path = self._topic_to_path.get(topic)
+        if not dbus_path:
+            return
+
+        try:
+            # Parse payload (JSON or raw)
+            value = json.loads(payload) if payload.startswith(("{", "[")) else payload
+
+            # Convert to appropriate type
+            value = self._convert_value(value)
+
+            # Write to D-Bus
+            if self.db.set_path(dbus_path, value):
+                logger.info(f"MQTT -> D-Bus: {topic} ({payload}) -> {dbus_path} = {value}")
+            else:
+                logger.warning(f"Failed to set D-Bus path: {dbus_path}")
+
+        except json.JSONDecodeError:
+            logger.warning(f"Invalid JSON payload: {payload}")
+        except Exception as e:
+            logger.error(f"Error handling set command: {e}")
+            self._errors += 1
+
+    def _handle_telemetry(self, topic: str, payload: str) -> None:
+        """Handle incoming telemetry from MQTT."""
+        dbus_path = self._topic_to_path.get(topic)
+        if not dbus_path:
+            return
+
+        try:
+            # Parse payload
+            value = json.loads(payload) if payload.startswith(("{", "[")) else payload
+            value = self._convert_value(value)
+
+            # Update D-Bus
+            if self.db.set_path(dbus_path, value):
+                logger.debug(f"MQTT -> D-Bus: {topic} -> {dbus_path} = {value}")
+            else:
+                logger.debug(f"D-Bus path not found: {dbus_path}")
+
+        except Exception as e:
+            logger.error(f"Error handling telemetry: {e}")
+            self._errors += 1
+
+    def _convert_value(self, value: Any) -> Any:
+        """Convert MQTT payload to appropriate Python type."""
+        if isinstance(value, str):
+            # Try to convert numeric strings
+            try:
+                if "." in value:
+                    return float(value)
+                return int(value)
+            except ValueError:
+                # Boolean strings
+                if value.lower() in ("true", "on", "yes"):
+                    return True
+                if value.lower() in ("false", "off", "no"):
+                    return False
+                return value
+        return value
+
+    def _on_publish(self, client: mqtt.Client, userdata: Any, mid: int) -> None:
+        """MQTT on_publish callback."""
+        self._msg_sent += 1
+
+    def _on_subscribe(
+        self,
+        client: mqtt.Client,
+        userdata: Any,
+        mid: int,
+        granted_qos: List[int],
+    ) -> None:
+        """MQTT on_subscribe callback."""
+        logger.debug(f"Subscribed (mid: {mid}, QoS: {granted_qos})")
+
+    def _schedule_reconnect(self) -> None:
+        """Schedule reconnection with exponential backoff."""
+        if not self._running:
+            return
+
+        delay = min(self.config.reconnect_delay * (2 ** self._errors), 300)
+        logger.info(f"Scheduling MQTT reconnect in {delay}s")
+
+        def _reconnect():
+            import time
+            time.sleep(delay)
+            if self._running:
+                try:
+                    self._client.reconnect()
+                except Exception as e:
+                    logger.error(f"Reconnect failed: {e}")
+                    self._schedule_reconnect()
+
+        import threading
+        threading.Thread(target=_reconnect, daemon=True).start()
+
+    def publish(self, topic: str, payload: Any, retain: bool = False) -> bool:
+        """Publish message to MQTT."""
+        if not self._client or not self._connected:
+            logger.debug(f"MQTT not connected, skipping publish to {topic}")
+            return False
+
+        try:
+            # Serialize payload
+            if isinstance(payload, (dict, list)):
+                payload_str = json.dumps(payload)
+            else:
+                payload_str = str(payload)
+
+            result = self._client.publish(
+                topic,
+                payload_str,
+                qos=self.config.qos,
+                retain=retain,
+            )
+            result.wait_for_publish(timeout=5)
+            return True
+
+        except Exception as e:
+            logger.error(f"Publish failed: {e}")
+            self._errors += 1
+            return False
+
+    def publish_path(self, dbus_path: str, value: Any, retain: bool = False) -> bool:
+        """Publish D-Bus path value to MQTT topic."""
+        topic = self._path_to_topic.get(dbus_path)
+        if not topic:
+            return False
+        return self.publish(topic, value, retain)
+
+    def _publish_ha_discovery(self) -> None:
+        """Publish Home Assistant MQTT discovery config."""
+        if not self.config.ha_discovery:
+            return
+
+        device_info = {
+            "identifiers": [f"{self.db.service_name}_{self.db.device_instance}"],
+            "name": self.config.device_name or self.db.config.device.product_name,
+            "model": self.db.config.device.product_name,
+            "manufacturer": "Victron Energy",
+            "sw_version": self.db.config.device.firmware_version,
+        }
+
+        # Publish sensor configs for each mapped path
+        for topic, dbus_path in self._topic_to_path.items():
+            sensor_name = topic.split("/")[-1].replace("_", " ").title()
+            unique_id = f"{self.db.service_name}_{dbus_path.replace('/', '_')}"
+
+            config = {
+                "name": sensor_name,
+                "unique_id": unique_id,
+                "state_topic": topic,
+                "device": device_info,
+                "force_update": True,
+            }
+
+            # Add unit of measurement based on path
+            if "voltage" in dbus_path.lower():
+                config["unit_of_measurement"] = "V"
+                config["device_class"] = "voltage"
+            elif "current" in dbus_path.lower():
+                config["unit_of_measurement"] = "A"
+                config["device_class"] = "current"
+            elif "power" in dbus_path.lower():
+                config["unit_of_measurement"] = "W"
+                config["device_class"] = "power"
+            elif "energy" in dbus_path.lower():
+                config["unit_of_measurement"] = "kWh"
+                config["device_class"] = "energy"
+            elif "temperature" in dbus_path.lower():
+                config["unit_of_measurement"] = "°C"
+                config["device_class"] = "temperature"
+            elif "soc" in dbus_path.lower():
+                config["unit_of_measurement"] = "%"
+                config["device_class"] = "battery"
+
+            discovery_topic = f"homeassistant/sensor/{unique_id}/config"
+            self.publish(discovery_topic, config, retain=True)
+
+    def disconnect(self) -> None:
+        """Disconnect from MQTT broker."""
+        self._running = False
+
+        if self._client:
+            self._client.loop_stop()
+            self._client.disconnect()
+            self._connected = False
+            logger.info("MQTT disconnected")
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get bridge statistics."""
+        return {
+            "connected": self._connected,
+            "messages_received": self._msg_received,
+            "messages_sent": self._msg_sent,
+            "errors": self._errors,
+            "topics_subscribed": len(self._topic_to_path),
+        }
+
+    def register_dbus_change_callback(self, path: str, callback: Callable) -> None:
+        """Register callback for D-Bus path changes to publish to MQTT."""
+        self.db.register_callback(f"path_changed_{path}", callback)

@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Data Models - {{ class_name }}Service
+==================================================
+
+Pydantic models for configuration, MQTT messages, and D-Bus data.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional, Union
+
+from pydantic import BaseModel, Field, field_validator
+
+
+class DeviceType(str, Enum):
+    """Victron device types for D-Bus paths."""
+
+    BATTERY = "battery"
+    PV_INVERTER = "pv_inverter"
+    GRID_METER = "grid_meter"
+    TANK = "tank"
+    TEMPERATURE = "temperature"
+    GENERIC = "generic"
+
+
+class MQTTMessage(BaseModel):
+    """MQTT message model."""
+
+    topic: str
+    payload: Union[str, int, float, bool, Dict, List]
+    qos: int = 1
+    retain: bool = False
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DBusPathValue(BaseModel):
+    """D-Bus path with value and metadata."""
+
+    path: str
+    value: Any
+    writeable: bool = False
+    description: str = ""
+    unit: str = ""
+    min_value: Optional[float] = None
+    max_value: Optional[float] = None
+
+
+class BatteryData(BaseModel):
+    """Battery telemetry data model."""
+
+    voltage: Optional[float] = None
+    current: Optional[float] = None
+    power: Optional[float] = None
+    soc: Optional[float] = None
+    capacity: Optional[float] = None
+    temperature: Optional[float] = None
+    cell_voltages: List[float] = Field(default_factory=list)
+    cell_min_v: Optional[float] = None
+    cell_max_v: Optional[float] = None
+    cell_avg_v: Optional[float] = None
+    imbalance: Optional[float] = None
+    cycles: Optional[int] = None
+    time_to_go: Optional[int] = None
+    alarm: Optional[str] = None
+    bms_error: Optional[int] = None
+
+
+class PVInverterData(BaseModel):
+    """PV Inverter telemetry data model."""
+
+    ac_power: Optional[float] = None
+    ac_voltage: Optional[float] = None
+    ac_current: Optional[float] = None
+    ac_frequency: Optional[float] = None
+    energy_forward: Optional[float] = None
+    dc_voltage: Optional[float] = None
+    dc_current: Optional[float] = None
+    dc_power: Optional[float] = None
+    status: Optional[int] = None
+
+
+class GridMeterData(BaseModel):
+    """Grid meter telemetry data model."""
+
+    power: Optional[float] = None
+    voltage: Optional[float] = None
+    current: Optional[float] = None
+    energy_forward: Optional[float] = None
+    energy_reverse: Optional[float] = None
+    frequency: Optional[float] = None
+    power_factor: Optional[float] = None
+
+
+class TankData(BaseModel):
+    """Tank telemetry data model."""
+
+    level: Optional[float] = None
+    fluid_type: int = 1
+    capacity: Optional[float] = None
+    remaining: Optional[float] = None
+
+
+class TemperatureData(BaseModel):
+    """Temperature sensor data model."""
+
+    temperature: Optional[float] = None
+    unit: str = "celsius"
+    sensor_type: str = "external"
+
+
+# Device-type specific data model
+DEVICE_DATA_MODELS = {
+    DeviceType.BATTERY: BatteryData,
+    DeviceType.PV_INVERTER: PVInverterData,
+    DeviceType.GRID_METER: GridMeterData,
+    DeviceType.TANK: TankData,
+    DeviceType.TEMPERATURE: TemperatureData,
+    DeviceType.GENERIC: Dict[str, Any],
+}
+
+
+def get_data_model(device_type: Union[str, DeviceType]) -> type:
+    """Get the appropriate data model for device type."""
+    if isinstance(device_type, str):
+        try:
+            device_type = DeviceType(device_type.lower())
+        except ValueError:
+            device_type = DeviceType.GENERIC
+    return DEVICE_DATA_MODELS.get(device_type, Dict[str, Any])
+
+
+class ServiceStatus(BaseModel):
+    """Service status model."""
+
+    connected: bool = False
+    mqtt_connected: bool = False
+    dbus_registered: bool = False
+    last_update: Optional[datetime] = None
+    error_count: int = 0
+    uptime_seconds: float = 0.0
+
+
+class Command(BaseModel):
+    """Command model for D-Bus method calls."""
+
+    command: str
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    request_id: Optional[str] = None
+
+
+class Response(BaseModel):
+    """Response model for D-Bus method calls."""
+
+    success: bool
+    result: Optional[Any] = None
+    error: Optional[str] = None
+    request_id: Optional[str] = None

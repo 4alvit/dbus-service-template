@@ -1,0 +1,133 @@
+# Copier template configuration for dbus-service-template
+# Generates production-ready D-Bus services for Venus OS
+
+_suffix: .j2
+suffix: .j2
+
+# Pre-compute common values
+_compute:
+  project_slug: "{{ project_name.lower().replace(' ', '-').replace('_', '-') }}"
+  module_name: "{{ project_slug.replace('-', '_') }}"
+  class_name: "{{ project_name.replace('-', ' ').replace('_', ' ').title().replace(' ', '') }}Service"
+  service_name: "{{ 'com.victronenergy.' + project_slug.replace('-', '') }}"
+  github_repo: "{{ github_org }}/{{ project_slug }}"
+
+# Interactive prompts
+project_name:
+  type: str
+  help: Project name (e.g., "My Battery Monitor", "PV Inverter Bridge")
+  default: "My D-Bus Service"
+
+project_description:
+  type: str
+  help: One-line description for README and pyproject.toml
+  default: "D-Bus service for Venus OS"
+
+project_slug:
+  type: str
+  help: URL-safe project slug (auto-generated from project name)
+  default: "{{ project_slug }}"
+
+module_name:
+  type: str
+  help: Python module name (snake_case)
+  default: "{{ module_name }}"
+
+class_name:
+  type: str
+  help: Service class name
+  default: "{{ class_name }}"
+
+service_name:
+  type: str
+  help: D-Bus service name
+  default: "{{ 'com.victronenergy.' + project_slug.replace('-', '') }}"
+
+device_type:
+  type: str
+  help: Device type for D-Bus paths and VRM integration
+  default: generic
+  choices:
+    - battery
+    - pv_inverter
+    - grid_meter
+    - tank
+    - temperature
+    - generic
+
+service_instance:
+  type: int
+  help: Default D-Bus instance number (0-255)
+  default: 0
+
+mqtt_enabled:
+  type: bool
+  help: Include MQTT bridge boilerplate
+  default: true
+
+mqtt_broker_default:
+  type: str
+  help: Default MQTT broker address
+  default: "127.0.0.1"
+
+mqtt_port_default:
+  type: int
+  help: Default MQTT broker port
+  default: 1883
+
+topic_prefix:
+  type: str
+  help: MQTT topic prefix (e.g., "battery", "pv_inverter")
+  default: "{{ project_slug }}"
+
+venus_os_package:
+  type: bool
+  help: Include Venus OS IPK packaging (Makefile, setup script, systemd)
+  default: true
+
+github_org:
+  type: str
+  help: GitHub organization for repository and CI/CD
+  default: "4alvit"
+
+author_name:
+  type: str
+  help: Author name for license and pyproject.toml
+  default: "{{ git_user_name }}"
+
+author_email:
+  type: str
+  help: Author email for license and pyproject.toml
+  default: "{{ git_user_email }}"
+
+license_type:
+  type: str
+  help: License for generated project
+  default: MIT
+  choices:
+    - MIT
+    - Apache-2.0
+
+python_version:
+  type: str
+  help: Minimum Python version (Venus OS uses 3.11+)
+  default: "3.11"
+  choices:
+    - "3.11"
+    - "3.12"
+    - "3.13"
+
+include_ha_discovery:
+  type: bool
+  help: Include Home Assistant MQTT discovery support
+  default: false
+
+include_dvcc:
+  type: bool
+  help: Include DVCC (Dynamic Voltage/Current Control) integration hooks
+  default: false
+
+include_gui:
+  type: bool
+  help: Include QML GUI overlay files for Venus OS GUI v2
+  default: false

@@ -1,0 +1,292 @@
+# Create Your First Venus OS Service in 5 Minutes
+
+This tutorial walks you through creating a production-ready D-Bus service for Victron Venus OS using the `dbus-service-template` copier template.
+
+## Prerequisites
+
+- Python 3.11+
+- `copier` installed (`pip install copier`)
+- A Victron GX device (Cerbo GX, Cerbo-S GX, Ekrano GX) or Venus OS SDK for testing
+
+## Step 1: Generate Your Project
+
+```bash
+copier copy gh:4alvit/dbus-service-template my-custom-service
+```
+
+Answer the interactive prompts:
+
+```
+Project name [My D-Bus Service]: My Battery Monitor
+Project description [D-Bus service for Venus OS]: Custom BMS monitoring for LiFePO4
+Device type [generic]: battery
+Default D-Bus instance [0]: 0
+Include MQTT bridge [True]: y
+Default MQTT broker [127.0.0.1]: 192.168.1.100
+MQTT topic prefix [my-custom-service]: battery
+Include Venus OS IPK packaging [True]: y
+GitHub organization [4alvit]: your-github-org
+Author name [Your Name]: Jane Developer
+Author email [you@example.com]: jane@example.com
+License [MIT]: MIT
+```
+
+This creates a complete project structure:
+
+```
+my-custom-service/
+├── pyproject.toml           # Modern Python packaging
+├── config.example.yaml      # Configuration template
+├── src/
+│   └── my_custom_service/   # Your package
+│       ├── __init__.py
+│       ├── __main__.py      # CLI entry point
+│       ├── config.py        # Pydantic config models
+│       ├── models.py        # Data models
+│       ├── service.py       # D-Bus service (VeDbusService)
+│       └── mqtt_bridge.py   # MQTT <-> D-Bus bridge
+├── tests/                   # Pytest tests
+├── packaging/
+│   └── venus-os/
+│       └── my-custom-service/
+│           ├── Makefile     # IPK build
+│           └── setup        # Venus OS installer
+├── .github/workflows/       # CI/CD pipelines
+├── README.md                # Generated docs
+└── LICENSE                  # MIT License
+```
+
+## Step 2: Develop Locally
+
+```bash
+cd my-custom-service
+
+# Install in development mode
+pip install -e ".[dev]"
+
+# Run tests (all pass out of the box)
+pytest -v
+
+# Run the service in mock mode (no Venus OS needed)
+python -m my_custom_service --log-level DEBUG
+```
+
+### What You Get Out of the Box
+
+- **D-Bus Service** with standard Victron paths (`/Connected`, `/DeviceInstance`, `/Soc`, `/Dc/0/Voltage`, etc.)
+- **MQTT Bridge** with automatic topic → D-Bus path mapping
+- **Home Assistant Discovery** (optional) - sensors auto-appear in HA
+- **Configuration** via YAML + environment variables
+- **Tests** for config, models, service, and MQTT bridge
+- **CI/CD** with linting, testing, and Venus OS IPK building
+
+## Step 3: Customize Your Service
+
+### Add Your Battery Paths
+
+Edit `src/my_custom_service/service.py`:
+
+```python
+# In _init_battery_paths(), add custom paths
+self.set_path("/Custom/Path", 0.0)
+
+# Add your data update method
+def update_bms_data(self, voltage, current, soc, cell_voltages, temps):
+    self.update_battery_data(
+        voltage=voltage,
+        current=current,
+        soc=soc,
+        temperature=temps[0] if temps else None,
+        cell_voltages=cell_voltages,
+    )
+```
+
+### Add MQTT Topic Mappings
+
+Edit `src/my_custom_service/mqtt_bridge.py`:
+
+```python
+# In _setup_topic_mappings(), add your topics
+self._topic_to_path = {
+    "battery/voltage": "/Dc/0/Voltage",
+    "battery/current": "/Dc/0/Current",
+    "battery/soc": "/Soc",
+    "battery/cell_voltage/1": "/CellVoltages/0",
+    "battery/cell_voltage/2": "/CellVoltages/1",
+    # ...
+}
+```
+
+### Add DVCC Integration (Optional)
+
+In your service class:
+
+```python
+def update_dvcc_limits(self, max_charge, max_discharge, max_voltage):
+    self.set_max_charge_current(max_charge)
+    self.set_max_discharge_current(max_discharge)
+    self.set_max_charge_voltage(max_voltage)
+```
+
+## Step 4: Test on Venus OS
+
+### Option A: Docker Venus SDK (Recommended for CI)
+
+```bash
+# Build IPK package
+docker run --rm -v "$PWD:/src" victron/venus-sdk:latest \
+  /bin/bash -c "cd /src/packaging/venus-os/my-custom-service && make"
+
+# Output: my-custom-service_0.1.0-1_arm_cortex-a9.ipk
+```
+
+### Option B: Direct on GX Device
+
+```bash
+# Copy files
+scp -r src/my_custom_service root@cerbo:/data/my-custom-service/
+scp config.example.yaml root@cerbo:/etc/my-custom-service/config.yaml
+
+# Create systemd service
+scp packaging/venus-os/my-custom-service/systemd/my-custom-service.service \
+    root@cerbo:/etc/systemd/system/
+
+# Install and start
+ssh root@cerbo "
+    systemctl daemon-reload
+    systemctl enable my-custom-service
+    systemctl start my-custom-service
+    journalctl -u my-custom-service -f
+"
+```
+
+## Step 5: Verify in VRM
+
+1. Open https://vrm.victronenergy.com
+2. Navigate to your installation
+3. Your device appears under **Devices** → **Battery**
+4. Monitor real-time data: SoC, Voltage, Current, Cell voltages, Temperature
+
+## Step 6: Deploy to Production
+
+### Tag and Release
+
+```bash
+git add .
+git commit -m "Initial version"
+git tag v0.1.0
+git push origin main --tags
+```
+
+### Auto-Deploy
+
+The GitHub Actions workflows automatically:
+1. Run tests on every push
+2. Build IPK package on tag push
+3. Upload IPK to GitHub Releases
+4. (Optional) Publish to PyPI
+
+### Install on Fleet
+
+```bash
+# Download latest release
+wget https://github.com/your-org/my-custom-service/releases/latest/download/my-custom-service_*.ipk
+
+# Install on multiple devices
+for host in cerbo1 cerbo2 cerbo3; do
+    scp my-custom-service_*.ipk root@$host:/tmp/
+    ssh root@$host "opkg install /tmp/my-custom-service_*.ipk"
+done
+```
+
+## Common Patterns
+
+### Read Data from Modbus/Serial
+
+```python
+# In your service or a separate thread
+async def read_bms_registers(self):
+    while self._running):
+        data = self.modbus_client.read_holding_registers(0x00, 20)
+        self.update_bms_data(
+            voltage=data[0] / 100.0,
+            current=data[1] / 100.0,
+            ...
+        )
+        await asyncio.sleep(self.config.poll_interval_ms / 1000)
+```
+
+### Handle D-Bus Method Calls
+
+```python
+# In service.py, _register_methods()
+self.add_method(
+    "SetChargeCurrent",
+    self._handle_set_charge_current,
+    in_signature="d",
+    out_signature="",
+)
+
+def _handle_set_charge_current(self, current: float):
+    self.set_max_charge_current(current)
+```
+
+### Alarm Management
+
+```python
+# Built-in alarm paths
+self.set_alarm("low_soc", soc < 10)
+self.set_alarm("high_temperature", temp > 45)
+self.set_alarm("cell_imbalance", max(cells) - min(cells) > 0.1)
+
+# Custom alarm
+self.set_alarm("custom_fault", fault_code != 0)
+```
+
+## Configuration Reference
+
+```yaml
+# config.yaml
+mqtt:
+  broker: "192.168.1.100"
+  port: 1883
+  username: "user"
+  password: "pass"
+  topic_prefix: "battery"
+  ha_discovery: true
+
+device:
+  product_id: 0x4200
+  product_name: "Custom LiFePO4 BMS"
+  firmware_version: "1.0.0"
+  serial_number: "BMS001"
+
+battery:
+  capacity_ah: 200.0
+  max_charge_current: 100.0
+  max_discharge_current: 200.0
+  charge_voltage: 56.8
+  cells_per_battery: 16
+
+dvcc:
+  enabled: true
+  max_charge_current: 100.0
+  max_discharge_current: 200.0
+  max_charge_voltage: 56.8
+
+alarms:
+  low_soc: 10.0
+  high_temperature: 45.0
+  cell_imbalance: 0.1
+```
+
+## Next Steps
+
+- Read the [Victron D-Bus API docs](https://github.com/victronenergy/venus/wiki/dbus-api)
+- Check [dbus-mqtt-battery](https://github.com/victron-venus/dbus-mqtt-battery) for reference implementation
+- Join [Victron Community](https://community.victronenergy.com) for support
+- Explore [Venus OS SDK](https://github.com/victronenergy/venus-sdk) for advanced packaging
+
+---
+
+**Congratulations!** You've created a production-ready Venus OS D-Bus service in under 5 minutes. The template handles all the boilerplate so you can focus on your device integration logic.

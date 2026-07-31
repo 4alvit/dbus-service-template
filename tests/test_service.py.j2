@@ -1,0 +1,371 @@
+# Tests for {{ class_name }}Service
+
+import pytest
+from unittest.mock import Mock, MagicMock, patch
+from pathlib import Path
+
+from {{ module_name }}.config import Config, MQTTConfig, DeviceConfig, load_config
+from {{ module_name }}.models import (
+    BatteryData, PVInverterData, GridMeterData,
+    TankData, TemperatureData, DeviceType, ServiceStatus
+)
+from {{ module_name }}.service import {{ class_name }}Service
+
+
+class TestConfig:
+    """Test configuration loading."""
+
+    def test_default_config(self):
+        """Test default configuration values."""
+        config = Config()
+
+        assert config.mqtt.broker == "{{ mqtt_broker_default }}"
+        assert config.mqtt.port == {{ mqtt_port_default }}
+        assert config.mqtt.topic_prefix == "{{ topic_prefix }}"
+        assert config.device.device_type == "{{ device_type }}"
+        assert config.log_level == "INFO"
+
+    def test_config_from_yaml(self, tmp_path):
+        """Test loading config from YAML file."""
+        yaml_content = """
+mqtt:
+  broker: "192.168.1.100"
+  port: 1883
+  topic_prefix: "test_device"
+device:
+  device_type: "battery"
+  custom_name: "My Battery"
+log_level: "DEBUG"
+"""
+        config_file = tmp_path / "test_config.yaml"
+        config_file.write_text(yaml_content)
+
+        config = Config(**config_file)
+
+        assert config.mqtt.broker == "192.168.1.100"
+        assert config.mqtt.topic_prefix == "test_device"
+        assert config.log_level == "DEBUG"
+
+    def test_config_env_override(self, monkeypatch):
+        """Test environment variable override."""
+        monkeypatch.setenv("MQTT_BROKER", "env.broker")
+        monkeypatch.setenv("MQTT_PORT", "8883")
+        monkeypatch.setenv("DEVICE_CUSTOM_NAME", "Env Device")
+
+        config = Config()
+
+        assert config.mqtt.broker == "env.broker"
+        assert config.mqtt.port == 8883
+        assert config.device.custom_name == "Env Device"
+
+    def test_config_validation(self):
+        """Test configuration validation."""
+        with pytest.raises(ValueError):
+            Config(log_level="INVALID")
+
+        with pytest.raises(ValueError):
+            MQTTConfig(port=70000)
+
+        with pytest.raises(ValueError):
+            MQTTConfig(qos=3)
+
+
+class TestModels:
+    """Test data models."""
+
+    def test_battery_data(self):
+        """Test BatteryData model."""
+        data = BatteryData(
+            voltage=48.5,
+            current=10.2,
+            soc=85.5,
+            temperature=25.0,
+            cell_voltages=[3.0, 3.1, 3.05, 3.15] * 4,
+        )
+
+        assert data.voltage == 48.5
+        assert data.current == 10.2
+        assert data.soc == 85.5
+        assert len(data.cell_voltages) == 16
+
+    def test_pv_inverter_data(self):
+        """Test PVInverterData model."""
+        data = PVInverterData(
+            ac_power=2500.0,
+            ac_voltage=230.5,
+            ac_current=10.8,
+            ac_frequency=50.0,
+            energy_forward=15.5,
+        )
+
+        assert data.ac_power == 2500.0
+        assert data.ac_frequency == 50.0
+
+    def test_grid_meter_data(self):
+        """Test GridMeterData model."""
+        data = GridMeterData(
+            power=1500.0,
+            voltage=230.0,
+            current=6.5,
+            energy_forward=1000.0,
+            energy_reverse=50.0,
+            frequency=50.0,
+        )
+
+        assert data.power == 1500.0
+        assert data.energy_forward == 1000.0
+
+    def test_tank_data(self):
+        """Test TankData model."""
+        data = TankData(
+            level=75.0,
+            fluid_type=1,  # Fresh water
+            capacity=1000.0,
+            remaining=750.0,
+        )
+
+        assert data.level == 75.0
+        assert data.fluid_type == 1
+
+    def test_temperature_data(self):
+        """Test TemperatureData model."""
+        data = TemperatureData(
+            temperature=22.5,
+            unit="celsius",
+            sensor_type="external",
+        )
+
+        assert data.temperature == 22.5
+        assert data.unit == "celsius"
+
+    def test_service_status(self):
+        """Test ServiceStatus model."""
+        status = ServiceStatus(
+            connected=True,
+            mqtt_connected=True,
+            dbus_registered=True,
+            error_count=0,
+            uptime_seconds=3600.0,
+        )
+
+        assert status.connected is True
+        assert status.uptime_seconds == 3600.0
+
+
+class TestService:
+    """Test {{ class_name }}Service."""
+
+    @pytest.fixture
+    def config(self):
+        """Create test config."""
+        return Config()
+
+    def test_service_init(self, config):
+        """Test service initialization."""
+        service = {{ class_name }}Service(
+            config=config,
+            device_type="{{ device_type }}",
+            instance={{ service_instance }},
+        )
+
+        assert service.device_type == "{{ device_type }}"
+        assert service.instance == {{ service_instance }}
+        assert service.service_name is not None
+
+    def test_service_paths(self, config):
+        """Test standard D-Bus paths are initialized."""
+        service = {{ class_name }}Service(
+            config=config,
+            device_type="{{ device_type }}",
+            instance={{ service_instance }},
+        )
+
+        # Standard paths
+        assert service.get_path("/DeviceInstance") == {{ service_instance }}
+        assert service.get_path("/ProductId") == config.device.product_id
+        assert service.get_path("/ProductName") == config.device.product_name
+        assert service.get_path("/Connected") == 1
+
+    def test_update_path(self, config):
+        """Test updating D-Bus paths."""
+        service = {{ class_name }}Service(
+            config=config,
+            device_type="{{ device_type }}",
+            instance={{ service_instance }},
+        )
+
+        # Update a value
+        result = service.update_path("/CustomPath", 42.5)
+        assert result is True
+        assert service.get_path("/CustomPath") == 42.5
+
+        # Update same value (should return False)
+        result = service.update_path("/CustomPath", 42.5)
+        assert result is False
+
+    def test_battery_data_update(self, config):
+        """Test battery data helper."""
+        service = {{ class_name }}Service(
+            config=config,
+            device_type="battery",
+            instance=0,
+        )
+
+        service.update_battery_data(
+            voltage=51.2,
+            current=25.0,
+            soc=80.0,
+            temperature=28.5,
+        )
+
+        assert service.get_path("/Dc/0/Voltage") == 51.2
+        assert service.get_path("/Dc/0/Current") == 25.0
+        assert service.get_path("/Soc") == 80.0
+        assert service.get_path("/Dc/0/Temperature") == 28.5
+
+    def test_pv_inverter_data_update(self, config):
+        """Test PV inverter data helper."""
+        service = {{ class_name }}Service(
+            config=config,
+            device_type="pv_inverter",
+            instance=0,
+        )
+
+        service.update_pv_data(
+            power=3000.0,
+            voltage=230.0,
+            current=13.0,
+        )
+
+        assert service.get_path("/Ac/Power") == 3000.0
+        assert service.get_path("/Ac/L1/Voltage") == 230.0
+        assert service.get_path("/Ac/L1/Current") == 13.0
+        assert service.get_path("/Ac/L1/Power") == 2990.0  # V * I
+
+    def test_alarm_management(self, config):
+        """Test alarm setting and clearing."""
+        service = {{ class_name }}Service(
+            config=config,
+            device_type="battery",
+            instance=0,
+        )
+
+        # Set alarm
+        result = service.set_alarm("low_soc", True)
+        assert result is True
+        assert service.get_alarms()["low_soc"] == 1
+
+        # Clear alarm
+        result = service.set_alarm("low_soc", False)
+        assert result is True
+        assert service.get_alarms()["low_soc"] == 0
+
+    def test_invalid_alarm(self, config):
+        """Test setting invalid alarm."""
+        service = {{ class_name }}Service(config=config)
+        result = service.set_alarm("invalid_alarm", True)
+        assert result is False
+
+    def test_callback_registration(self, config):
+        """Test callback registration."""
+        service = {{ class_name }}Service(config=config)
+        callback = Mock()
+
+        service.register_callback("/TestPath", callback)
+        service.register_callback("*", callback)  # Wildcard
+
+        assert "/TestPath" in service._callbacks
+        assert "*" in service._callbacks
+
+
+@pytest.fixture
+def mock_mqtt():
+    """Create mock MQTT client."""
+    with patch("paho.mqtt.client.Client") as mock:
+        client = Mock()
+        mock.return_value = client
+        client.connect.return_value = None
+        client.loop_start.return_value = None
+        client.loop_stop.return_value = None
+        client.subscribe.return_value = (0, 1)
+        client.publish.return_value = Mock(wait_for_publish=Mock(return_value=True))
+        yield client
+
+
+class TestMQTTBridge:
+    """Test MQTT bridge."""
+
+    def test_bridge_init(self, config, mock_mqtt):
+        """Test bridge initialization."""
+        service = {{ class_name }}Service(config=config)
+
+        from {{ module_name }}.mqtt_bridge import MQTTBridge
+        bridge = MQTTBridge(config.mqtt, service)
+
+        assert bridge.config.broker == "{{ mqtt_broker_default }}"
+        assert bridge.config.port == {{ mqtt_port_default }}
+
+    def test_bridge_connect(self, config, mock_mqtt):
+        """Test bridge connection."""
+        service = {{ class_name }}Service(config=config)
+
+        from {{ module_name }}.mqtt_bridge import MQTTBridge
+        bridge = MQTTBridge(config.mqtt, service)
+        bridge.connect()
+
+        mock_mqtt.connect.assert_called_once()
+        mock_mqtt.loop_start.assert_called_once()
+
+    def test_bridge_publish(self, config, mock_mqtt):
+        """Test publishing to MQTT."""
+        service = {{ class_name }}Service(config=config)
+
+        from {{ module_name }}.mqtt_bridge import MQTTBridge
+        bridge = MQTTBridge(config.mqtt, service)
+        bridge._connected = True
+        bridge._client = mock_mqtt
+
+        result = bridge.publish("test/topic", "test_value")
+
+        assert result is True
+        mock_mqtt.publish.assert_called()
+
+    def test_bridge_publish_path(self, config, mock_mqtt):
+        """Test publishing D-Bus path to MQTT."""
+        service = {{ class_name }}Service(config=config)
+
+        from {{ module_name }}.mqtt_bridge import MQTTBridge
+        bridge = MQTTBridge(config.mqtt, service)
+        bridge._connected = True
+        bridge._client = mock_mqtt
+
+        # Add a path mapping
+        bridge.set_custom_mapping("test/voltage", "/Dc/0/Voltage")
+
+        result = bridge.publish_path("/Dc/0/Voltage", 48.5)
+
+        assert result is True
+        mock_mqtt.publish.assert_called()
+
+
+class TestGetDataModel:
+    """Test get_data_model function."""
+
+    def test_battery_model(self):
+        from {{ module_name }}.models import get_data_model
+        model = get_data_model("battery")
+        assert model == BatteryData
+
+    def test_pv_inverter_model(self):
+        from {{ module_name }}.models import get_data_model
+        model = get_data_model("pv_inverter")
+        assert model == PVInverterData
+
+    def test_unknown_model(self):
+        from {{ module_name }}.models import get_data_model
+        model = get_data_model("unknown")
+        assert model == dict
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

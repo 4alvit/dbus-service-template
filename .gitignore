@@ -1,0 +1,60 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+*.whl
+*.tar.gz
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Test / Coverage
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Config files (generated)
+config.yaml
+config.yml
+*.ipk
+
+# IDE specific
+.copilot/
+
+# Docker
+.docker/
+
+# Backup files
+*.bak
+*.backup

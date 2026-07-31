@@ -1,0 +1,92 @@
+#!/bin/bash
+
+# {{ project_name }} SetupHelper compatible setup script
+# D-Bus service for Venus OS
+
+#### following line incorporates SetupHelper resources into this script
+source "/data/SetupHelper/HelperResources/IncludeHelpers"
+#### end of lines to include helper resources
+
+# Package info
+packageName="{{ project_slug }}"
+serviceName="{{ project_slug }}"
+
+#### running manually - prompt for input
+if [ "$scriptAction" == 'NONE' ]; then
+    standardActionPrompt
+fi
+
+#### install
+if [ "$scriptAction" == 'INSTALL' ]; then
+    logMessage "Installing $packageName"
+
+    # Create directories
+    mkdir -p /data/{{ project_slug }}
+    mkdir -p /var/log/{{ project_slug }}
+
+    # Install Python scripts
+    cp "$scriptDir/../src/{{ module_name }}"/*.py /data/{{ project_slug }}/
+    chmod +x /data/{{ project_slug }}/*.py
+
+{% if cookiecutter.include_gui %}
+    # Install QML files (GUI pages) if present
+    if [ -d "$scriptDir/../src/{{ module_name }}/qml" ]; then
+        mkdir -p /data/{{ project_slug }}/qml
+        cp -r "$scriptDir/../src/{{ module_name }}/qml/"*.qml /data/{{ project_slug }}/qml/ 2>/dev/null || true
+        logMessage "Installed QML files"
+    fi
+{% endif %}
+
+    # Create systemd service
+    cat > "/etc/systemd/system/{{ project_slug }}.service" << EOF
+[Unit]
+Description={{ project_name }}
+After=network.target dbus.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/data/{{ project_slug }}
+ExecStart=/usr/bin/python3 -u {{ module_name }}.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+Environment=MQTT_BROKER=127.0.0.1
+Environment=MQTT_PORT=1883
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Enable and start service
+    systemctl daemon-reload
+    systemctl enable {{ project_slug }}
+    systemctl start {{ project_slug }}
+
+    logMessage "Installation complete"
+fi
+
+#### uninstall
+if [ "$scriptAction" == 'UNINSTALL' ]; then
+    logMessage "Uninstalling $packageName"
+
+    # Stop and disable service
+    systemctl stop {{ project_slug }} 2>/dev/null || true
+    systemctl disable {{ project_slug }} 2>/dev/null || true
+
+    # Remove systemd service
+    rm -f /etc/systemd/system/{{ project_slug }}.service
+    systemctl daemon-reload
+
+    # Remove Python scripts
+    rm -rf /data/{{ project_slug }}
+
+    logMessage "Uninstallation complete"
+fi
+
+endScript

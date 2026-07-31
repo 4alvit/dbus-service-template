@@ -1,0 +1,53 @@
+name: Venus OS Package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  ipk:
+    name: Build .ipk package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+
+      - name: Build .ipk package
+        run: |
+          docker run --rm -v "$PWD:/src" victron/venus-sdk:latest \
+            /bin/bash -c "cd /src/packaging/venus-os/{{ cookiecutter.project_slug }} && make -f Makefile"
+
+      - name: Find .ipk artifact
+        id: find-ipk
+        run: |
+          IPK_FILE=$(find . -name "*.ipk" | head -1)
+          if [ -z "$IPK_FILE" ]; then
+            echo "error: No .ipk file found" >&2
+            exit 1
+          fi
+          echo "ipk_file=$IPK_FILE" >> $GITHUB_OUTPUT
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: {{ cookiecutter.project_slug }}.ipk
+          path: ${{ steps.find-ipk.outputs.ipk_file }}
+
+      - name: Upload to Release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ steps.find-ipk.outputs.ipk_file }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

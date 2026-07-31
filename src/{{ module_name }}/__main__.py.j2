@@ -1,0 +1,245 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+{{ class_name }} - D-Bus Service for Venus OS
+=========================================================
+
+{{ project_description }}
+
+Device Type: {{ device_type }}
+D-Bus Service: {{ service_name }}
+Default Instance: {{ service_instance }}
+
+Usage:
+    python -m {{ module_name }} --mqtt-broker 192.168.1.100 --instance 0
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import signal
+import sys
+import os
+from pathlib import Path
+from typing import Any, Optional
+
+# Venus OS velib_python path (required on Venus OS)
+VELIB_PATHS = [
+    "/opt/victronenergy/dbus-systemcalc-py/ext/velib_python",
+    "/opt/victronenergy/velib_python",
+]
+
+for p in VELIB_PATHS:
+    if Path(p).exists():
+        sys.path.insert(0, p)
+        break
+
+# Optional imports - available on Venus OS
+try:
+    from vedbus import VeDbusService
+    import dbus
+    from dbus.mainloop.glib import DBusGMainLoop
+    from gi.repository import GLib
+    VEDBUS_AVAILABLE = True
+except ImportError:
+    VEDBUS_AVAILABLE = False
+    VeDbusService = None
+    dbus = None
+    DBusGMainLoop = None
+    GLib = None
+
+# Local imports
+from .config import Config, load_config
+from .service import {{ class_name }}Service
+
+__version__ = "0.1.0"
+
+# Logging setup
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="{{ project_description }}",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
+
+    parser.add_argument(
+        "-c", "--config",
+        type=Path,
+        help="Path to configuration YAML file",
+    )
+
+    parser.add_argument(
+        "--mqtt-broker",
+        default="{{ mqtt_broker_default }}",
+        help="MQTT broker address",
+    )
+
+    parser.add_argument(
+        "--mqtt-port",
+        type=int,
+        default={{ mqtt_port_default }},
+        help="MQTT broker port",
+    )
+
+    parser.add_argument(
+        "--mqtt-username",
+        help="MQTT username (optional)",
+    )
+
+    parser.add_argument(
+        "--mqtt-password",
+        help="MQTT password (optional)",
+    )
+
+    parser.add_argument(
+        "--topic-prefix",
+        default="{{ topic_prefix }}",
+        help="MQTT topic prefix",
+    )
+
+    parser.add_argument(
+        "--instance",
+        type=int,
+        default={{ service_instance }},
+        help="D-Bus service instance number",
+    )
+
+    parser.add_argument(
+        "--device-type",
+        default="{{ device_type }}",
+        help="Victron device type for D-Bus paths",
+    )
+
+    parser.add_argument(
+        "--service-name",
+        default="{{ service_name }}",
+        help="D-Bus service name prefix",
+    )
+
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        help="Logging level",
+    )
+
+    return parser.parse_args()
+
+
+def setup_signals(main_loop: Any, service: Any) -> None:
+    """Set up signal handlers for graceful shutdown."""
+    def signal_handler(signum: int, frame: Any) -> None:
+        logger.info(f"Received signal {signum}, shutting down...")
+        if hasattr(service, 'shutdown'):
+            service.shutdown()
+        if main_loop:
+            main_loop.quit()
+
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+
+
+def create_dbus_service(config: Config, args: argparse.Namespace) -> Any:
+    """Create and initialize the D-Bus service."""
+    if not VEDBUS_AVAILABLE:
+        logger.error("vedbus not available - cannot create D-Bus service")
+        logger.error("Install velib_python or run on Venus OS")
+        sys.exit(1)
+
+    # Set up D-Bus main loop
+    DBusGMainLoop(set_as_default=True)
+
+    # Create service name with instance
+    service_name = f"{args.service_name}{args.instance}"
+
+    logger.info(f"Registering D-Bus service: {service_name}")
+
+    # Create the service
+    service = {{ class_name }}Service(
+        service_name=service_name,
+        device_instance=args.instance,
+        device_type=args.device_type,
+        config=config,
+    )
+
+    return service
+
+
+def main() -> int:
+    """Main entry point."""
+    args = parse_args()
+
+    # Set log level
+    logging.getLogger().setLevel(args.log_level)
+
+    # Load configuration
+    config = load_config(args.config) if args.config else Config()
+
+    # Override config with CLI args
+    config.mqtt.broker = args.mqtt_broker
+    config.mqtt.port = args.mqtt_port
+    config.mqtt.username = args.mqtt_username or config.mqtt.username
+    config.mqtt.password = args.mqtt_password or config.mqtt.password
+    config.mqtt.topic_prefix = args.topic_prefix
+
+    logger.info(f"Starting {{ class_name }} v{__version__}")
+    logger.info(f"D-Bus instance: {args.instance}")
+    logger.info(f"Device type: {args.device_type}")
+    logger.info(f"MQTT broker: {config.mqtt.broker}:{config.mqtt.port}")
+
+    # Create D-Bus service
+    service = create_dbus_service(config, args)
+
+    # Start MQTT bridge if enabled
+{% if cookiecutter.mqtt_enabled %}
+    from .mqtt_bridge import MQTTBridge
+
+    mqtt_bridge = MQTTBridge(config.mqtt, service)
+    mqtt_bridge.connect()
+{% else %}
+    mqtt_bridge = None
+{% endif %}
+
+    # Create main loop
+    main_loop = GLib.MainLoop()
+
+    # Set up signal handlers
+    setup_signals(main_loop, service)
+
+    # Start the service
+    service.start()
+
+    logger.info("Service started, entering main loop")
+
+    try:
+        main_loop.run()
+    except KeyboardInterrupt:
+        logger.info("Interrupted")
+    finally:
+        logger.info("Shutting down...")
+        service.shutdown()
+{% if cookiecutter.mqtt_enabled %}
+        if mqtt_bridge:
+            mqtt_bridge.disconnect()
+{% endif %}
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

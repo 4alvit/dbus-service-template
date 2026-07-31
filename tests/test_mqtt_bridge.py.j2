@@ -1,0 +1,209 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Tests for MQTT Bridge
+"""
+
+import pytest
+from unittest.mock import Mock, MagicMock, patch, call
+import json
+
+{% if cookiecutter.mqtt_enabled %}
+from {{ module_name }}.mqtt_bridge import MQTTBridge
+from {{ module_name }}.config import MQTTConfig
+from {{ module_name }}.service import {{ class_name }}Service
+
+
+class TestMQTTBridge:
+    """Test MQTT bridge functionality."""
+
+    @pytest.fixture
+    def mqtt_config(self):
+        """Create test MQTT config."""
+        return MQTTConfig(
+            broker="test.broker",
+            port=1883,
+            topic_prefix="test",
+            client_id="test_client",
+        )
+
+    @pytest.fixture
+    def mock_dbus_service(self):
+        """Create mock D-Bus service."""
+        service = Mock(spec={{ class_name }}Service)
+        service.service_name = "com.victronenergy.test"
+        service.device_instance = 0
+        service.device_type = "battery"
+        service.set_path = Mock(return_value=True)
+        service.get_path = Mock(return_value=0)
+        service.update_path = Mock(return_value=True)
+        service.register_callback = Mock()
+        return service
+
+    @pytest.fixture
+    def bridge(self, mqtt_config, mock_dbus_service):
+        """Create MQTT bridge instance."""
+        with patch('paho.mqtt.client.Client') as mock_client:
+            bridge = MQTTBridge(mqtt_config, mock_dbus_service)
+            bridge._client = mock_client.return_value
+            bridge._connected = True
+            return bridge
+
+    def test_initialization(self, bridge):
+        """Test bridge initialization."""
+        assert bridge.config.broker == "test.broker"
+        assert bridge.config.port == 1883
+        assert bridge.config.topic_prefix == "test"
+        assert bridge._connected is True
+
+    def test_topic_mappings_battery(self, mock_dbus_service):
+        """Test battery topic mappings."""
+        config = MQTTConfig(topic_prefix="battery")
+        with patch('paho.mqtt.client.Client'):
+            bridge = MQTTBridge(config, mock_dbus_service)
+
+        # Check battery-specific mappings
+        assert "battery/voltage" in bridge._topic_to_path
+        assert "battery/current" in bridge._topic_to_path
+        assert "battery/soc" in bridge._topic_to_path
+        assert bridge._topic_to_path["battery/voltage"] == "/Dc/0/Voltage"
+        assert bridge._topic_to_path["battery/soc"] == "/Soc"
+
+    def test_topic_mappings_pv_inverter(self, mock_dbus_service):
+        """Test PV inverter topic mappings."""
+        mock_dbus_service.device_type = "pv_inverter"
+        config = MQTTConfig(topic_prefix="pv_inverter")
+        with patch('paho.mqtt.client.Client'):
+            bridge = MQTTBridge(config, mock_dbus_service)
+
+        assert "pv_inverter/ac_power" in bridge._topic_to_path
+        assert "pv_inverter/ac_voltage" in bridge._topic_to_path
+        assert bridge._topic_to_path["pv_inverter/ac_power"] == "/Ac/Power"
+
+    def test_custom_mapping(self, bridge):
+        """Test custom topic mapping."""
+        bridge.set_custom_mapping("custom/topic", "/Custom/Path")
+
+        assert "custom/topic" in bridge._topic_to_path
+        assert bridge._topic_to_path["custom/topic"] == "/Custom/Path"
+        assert "/Custom/Path" in bridge._path_to_topic
+        assert bridge._path_to_topic["/Custom/Path"] == "custom/topic"
+
+    def test_publish(self, bridge):
+        """Test publishing to MQTT."""
+        result = bridge.publish("test/topic", "test_value")
+
+        assert result is True
+        bridge._client.publish.assert_called_once_with(
+            "test/topic",
+            "test_value",
+            qos=1,
+            retain=False,
+        )
+
+    def test_publish_json(self, bridge):
+        """Test publishing JSON to MQTT."""
+        result = bridge.publish("test/topic", {"key": "value", "num": 42})
+
+        assert result is True
+        # Check that JSON was published
+        call_args = bridge._client.publish.call_args
+        assert call_args is not None
+        published_payload = call_args[1]["payload"] if call_args[1] else call_args[0][1]
+        assert "key" in published_payload
+
+    def test_publish_not_connected(self, mqtt_config, mock_dbus_service):
+        """Test publishing when not connected."""
+        with patch('paho.mqtt.client.Client') as mock_client:
+            bridge = MQTTBridge(mqtt_config, mock_dbus_service)
+            bridge._client = mock_client.return_value
+            bridge._connected = False
+
+            result = bridge.publish("test/topic", "value")
+
+            assert result is False
+            mock_client.return_value.publish.assert_not_called()
+
+    def test_publish_path(self, bridge):
+        """Test publishing D-Bus path to MQTT."""
+        bridge._path_to_topic["/Dc/0/Voltage"] = "battery/voltage"
+
+        result = bridge.publish_path("/Dc/0/Voltage", 48.5)
+
+        assert result is True
+        bridge._client.publish.assert_called_once_with(
+            "battery/voltage",
+            "48.5",
+            qos=1,
+            retain=False,
+        )
+
+    def test_handle_set_command(self, bridge, mock_dbus_service):
+        """Test handling SET command from MQTT."""
+        bridge._topic_to_path["battery/voltage"] = "/Dc/0/Voltage"
+
+        bridge._on_message(Mock(), None, Mock(topic="battery/voltage/set", payload=b'48.0'))
+
+        mock_dbus_service.set_path.assert_called_once_with("/Dc/0/Voltage", 48.0)
+
+    def test_handle_telemetry(self, bridge, mock_dbus_service):
+        """Test handling telemetry from MQTT."""
+        bridge._topic_to_path["battery/soc"] = "/Soc"
+
+        bridge._on_message(Mock(), None, Mock(topic="battery/soc", payload=b'85.5'))
+
+        mock_dbus_service.set_path.assert_called_once_with("/Soc", 85.5)
+
+    def test_value_conversion(self, bridge):
+        """Test MQTT value conversion."""
+        assert bridge._convert_value("42") == 42
+        assert bridge._convert_value("3.14") == 3.14
+        assert bridge._convert_value("true") is True
+        assert bridge._convert_value("false") is False
+        assert bridge._convert_value("on") is True
+        assert bridge._convert_value("off") is False
+        assert bridge._convert_value("string") == "string"
+
+    def test_get_stats(self, bridge):
+        """Test getting bridge statistics."""
+        stats = bridge.get_stats()
+
+        assert "connected" in stats
+        assert "messages_received" in stats
+        assert "messages_sent" in stats
+        assert "errors" in stats
+        assert "topics_subscribed" in stats
+
+    def test_disconnect(self, bridge):
+        """Test disconnect."""
+        bridge.disconnect()
+
+        assert bridge._running is False
+        bridge._client.loop_stop.assert_called_once()
+        bridge._client.disconnect.assert_called_once()
+
+    def test_on_connect_success(self, bridge):
+        """Test successful MQTT connection."""
+        mock_client = Mock()
+        bridge._on_connect(mock_client, None, {}, 0, None)
+
+        assert bridge._connected is True
+        mock_client.subscribe.assert_called()
+
+    def test_on_connect_failure(self, bridge):
+        """Test failed MQTT connection."""
+        mock_client = Mock()
+        bridge._on_connect(mock_client, None, {}, 1, None)
+
+        assert bridge._connected is False
+        assert bridge._errors == 1
+
+{% else %}
+# MQTT disabled - placeholder tests
+class TestMQTTBridge:
+    """Placeholder when MQTT is disabled."""
+
+    def test_mqtt_disabled(self):
+        """MQTT bridge not included in this template."""
+        assert True
+{% endif %}

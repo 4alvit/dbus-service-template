@@ -1,0 +1,601 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+D-Bus Service Core - {{ class_name }}Service
+============================================================
+
+Core D-Bus service implementation using VeDbusService.
+Handles D-Bus paths, signals, methods, and DVCC integration.
+"""
+
+from __future__ import annotations
+
+import logging
+import sys
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Union
+
+from .config import Config, DeviceConfig
+
+# Venus OS velib_python path
+VELIB_PATHS = [
+    "/opt/victronenergy/dbus-systemcalc-py/ext/velib_python",
+    "/opt/victronenergy/velib_python",
+]
+
+for p in VELIB_PATHS:
+    if Path(p).exists():
+        sys.path.insert(0, p)
+        break
+
+# Optional imports - available on Venus OS
+try:
+    from vedbus import VeDbusService
+    import dbus
+    from dbus.mainloop.glib import DBusGMainLoop
+    from gi.repository import GLib
+    VEDBUS_AVAILABLE = True
+except ImportError:
+    VEDBUS_AVAILABLE = False
+    VeDbusService = object  # type: ignore
+    dbus = None
+    DBusGMainLoop = None
+    GLib = None
+
+logger = logging.getLogger(__name__)
+
+# D-Bus path constants
+_PATH_CONNECTED = "/Connected"
+_PATH_MODEL = "/Model"
+_PATH_FIRMWARE_VERSION = "/FirmwareVersion"
+_PATH_HARDWARE_VERSION = "/HardwareVersion"
+_PATH_SERIAL = "/Serial"
+_PATH_CUSTOM_NAME = "/CustomName"
+_PATH_DEVICE_INSTANCE = "/DeviceInstance"
+_PATH_PRODUCT_ID = "/ProductId"
+_PATH_PRODUCT_NAME = "/ProductName"
+
+# DVCC paths (Dynamic Voltage/Current Control)
+_PATH_DCC_MAX_CHARGE_CURRENT = "/Dc/0/MaxChargeCurrent"
+_PATH_DCC_MAX_DISCHARGE_CURRENT = "/Dc/0/MaxDischargeCurrent"
+_PATH_DCC_MAX_CHARGE_VOLTAGE = "/Dc/0/MaxChargeVoltage"
+_PATH_DCC_ALLOW_CHARGE = "/Dc/0/AllowCharge"
+_PATH_DCC_ALLOW_DISCHARGE = "/Dc/0/AllowDischarge"
+
+# Alarm paths
+_PATH_ALARMS = "/Alarms"
+_PATH_ALARM_LOW_SOC = "/Alarms/LowSoc"
+_PATH_ALARM_HIGH_TEMPERATURE = "/Alarms/HighTemperature"
+_PATH_ALARM_LOW_TEMPERATURE = "/Alarms/LowTemperature"
+_PATH_ALARM_CELL_IMBALANCE = "/Alarms/CellImbalance"
+_PATH_ALARM_INTERNAL_FAILURE = "/Alarms/InternalFailure"
+
+
+class {{ class_name }}Service(VeDbusService):
+    """
+    {{ project_name }} D-Bus Service.
+
+    Provides:
+    - Standard Victron D-Bus paths (DeviceInstance, ProductId, etc.)
+    - Signal emission for value changes
+    - Method handlers for D-Bus methods
+    - DVCC integration hooks
+    - Alarm management
+    - Configuration persistence
+    """
+
+    def __init__(
+        self,
+        config: Config,
+        device_type: str = "{{ device_type }}",
+        instance: int = {{ service_instance }},
+        service_name: str = "{{ service_name }}",
+    ) -> None:
+        """Initialize the D-Bus service."""
+        if not VEDBUS_AVAILABLE:
+            logger.warning("VeDbusService not available - running in mock mode")
+            self._mock_mode = True
+        else:
+            self._mock_mode = False
+
+        self.config = config
+        self.device_type = device_type
+        self.instance = instance
+        self.service_name = f"{service_name}.{device_type}_{instance}"
+
+        # Initialize VeDbusService
+        if self._mock_mode:
+            self._paths: Dict[str, Any] = {}
+            self._callbacks: Dict[str, List[Callable]] = {}
+        else:
+            super().__init__(self.service_name, GLib.MainLoop())
+            self._callbacks = {}
+
+        # Service state
+        self._connected = False
+        self._callbacks_registered = False
+        self._alarms: Dict[str, int] = {}
+
+        # Initialize standard paths
+        self._init_standard_paths()
+
+        # Register callbacks
+        self._register_callbacks()
+
+        logger.info(f"Initialized {{ class_name }}Service: {self.service_name}")
+
+    # =========================================================================
+    # Initialization
+    # =========================================================================
+
+    def _init_standard_paths(self) -> None:
+        """Initialize standard Victron D-Bus paths."""
+        dev = self.config.device
+
+        paths = {
+            _PATH_MODEL: dev.model,
+            _PATH_FIRMWARE_VERSION: dev.firmware_version,
+            _PATH_HARDWARE_VERSION: dev.hardware_version,
+            _PATH_SERIAL: dev.serial_number,
+            _PATH_CUSTOM_NAME: dev.custom_name,
+            _PATH_DEVICE_INSTANCE: self.instance,
+            _PATH_PRODUCT_ID: dev.product_id,
+            _PATH_PRODUCT_NAME: dev.product_name,
+            _PATH_CONNECTED: 1,
+        }
+
+        for path, value in paths.items():
+            self.set_path(path, value)
+
+        # Device type specific paths
+        self._init_device_type_paths()
+
+        logger.debug(f"Initialized {len(paths)} standard paths")
+
+    def _init_device_type_paths(self) -> None:
+        """Initialize device-type specific D-Bus paths."""
+        if self.device_type == "battery":
+            self._init_battery_paths()
+        elif self.device_type == "pv_inverter":
+            self._init_pv_inverter_paths()
+        elif self.device_type == "grid_meter":
+            self._init_grid_meter_paths()
+        elif self.device_type == "tank":
+            self._init_tank_paths()
+        elif self.device_type == "temperature":
+            self._init_temperature_paths()
+        # generic uses standard paths only
+
+    def _init_battery_paths(self) -> None:
+        """Initialize battery-specific D-Bus paths."""
+        paths = {
+            "/Soc": self.config.initial_soc,
+            "/Capacity": self.config.capacity_ah,
+            "/Dc/0/Voltage": 0.0,
+            "/Dc/0/Current": 0.0,
+            "/Dc/0/Power": 0.0,
+            "/Dc/0/Temperature": 0.0,
+            "/Dc/0/ConsumedAmphours": 0.0,
+            "/BatteryState": 0,  # 0=External, 1=Internal
+            "/Balancing": 0,
+            "/TimeRemaining": 0,
+            "/ChargeVoltage": self.config.charge_voltage,
+            "/ChargeCurrent": self.config.max_charge_current,
+            "/MaxChargeCurrent": self.config.max_charge_current,
+            "/MaxDischargeCurrent": self.config.max_discharge_current,
+            "/SystemMinCellVoltage": 0.0,
+            "/SystemMaxCellVoltage": 0.0,
+            # Cell voltages (dynamic)
+            "/Alarm/LowSoc": 0,
+            "/Alarm/HighTemperature": 0,
+            "/Alarm/LowTemperature": 0,
+            "/Alarm/CellImbalance": 0,
+            "/Alarm/InternalFailure": 0,
+        }
+        for path, value in paths.items():
+            self.set_path(path, value)
+
+    def _init_pv_inverter_paths(self) -> None:
+        """Initialize PV inverter-specific D-Bus paths."""
+        paths = {
+            "/Ac/Power": 0.0,
+            "/Ac/L1/Voltage": 0.0,
+            "/Ac/L1/Current": 0.0,
+            "/Ac/L1/Power": 0.0,
+            "/Ac/L2/Voltage": 0.0,
+            "/Ac/L2/Current": 0.0,
+            "/Ac/L2/Power": 0.0,
+            "/Ac/L3/Voltage": 0.0,
+            "/Ac/L3/Current": 0.0,
+            "/Ac/L3/Power": 0.0,
+            "/Ac/Frequency": 0.0,
+            "/Ac/Energy/Forward": 0.0,
+            "/Ac/Energy/Reverse": 0.0,
+            "/Ac/MaxPower": self.config.max_power,
+        }
+        for path, value in paths.items():
+            self.set_path(path, value)
+
+    def _init_grid_meter_paths(self) -> None:
+        """Initialize grid meter-specific D-Bus paths."""
+        paths = {
+            "/Ac/Power": 0.0,
+            "/Ac/L1/Voltage": 0.0,
+            "/Ac/L1/Current": 0.0,
+            "/Ac/L1/Power": 0.0,
+            "/Ac/L2/Voltage": 0.0,
+            "/Ac/L2/Current": 0.0,
+            "/Ac/L2/Power": 0.0,
+            "/Ac/L3/Voltage": 0.0,
+            "/Ac/L3/Current": 0.0,
+            "/Ac/L3/Power": 0.0,
+            "/Ac/Energy/Forward": 0.0,
+            "/Ac/Energy/Reverse": 0.0,
+            "/Ac/Frequency": 0.0,
+        }
+        for path, value in paths.items():
+            self.set_path(path, value)
+
+    def _init_tank_paths(self) -> None:
+        """Initialize tank-specific D-Bus paths."""
+        paths = {
+            "/Level": 0.0,
+            "/FluidType": 0,
+            "/Capacity": self.config.capacity_ah,
+            "/Remaining": 0.0,
+        }
+        for path, value in paths.items():
+            self.set_path(path, value)
+
+    def _init_temperature_paths(self) -> None:
+        """Initialize temperature sensor D-Bus paths."""
+        paths = {
+            "/Temperature": 0.0,
+            "/TemperatureType": 0,
+        }
+        for path, value in paths.items():
+            self.set_path(path, value)
+
+    def _register_callbacks(self) -> None:
+        """Register standard D-Bus callbacks."""
+        if self._mock_mode:
+            return
+
+        # Add path change callback
+        self.add_path_changed_callback(self._on_path_changed)
+
+        # Add method handlers
+        self._register_methods()
+
+        self._callbacks_registered = True
+
+    # =========================================================================
+    # D-Bus Method Handlers
+    # =========================================================================
+
+    def _register_methods(self) -> None:
+        """Register D-Bus method handlers."""
+        methods = {
+            "GetFirmwareVersion": self._method_get_firmware_version,
+            "GetSerial": self._method_get_serial,
+            "SetCustomName": self._method_set_custom_name,
+            "Reboot": self._method_reboot,
+            "FactoryReset": self._method_factory_reset,
+        }
+
+        for method_name, handler in methods.items():
+            self.add_method(method_name, handler)
+
+    def _method_get_firmware_version(self) -> str:
+        """Get firmware version."""
+        return self.config.device.firmware_version
+
+    def _method_get_serial(self) -> str:
+        """Get serial number."""
+        return self.config.device.serial_number
+
+    def _method_set_custom_name(self, name: str) -> bool:
+        """Set custom device name."""
+        self.set_path(_PATH_CUSTOM_NAME, name)
+        self.config.device.custom_name = name
+        return True
+
+    def _method_reboot(self) -> bool:
+        """Reboot device (mock)."""
+        logger.info("Reboot requested")
+        return True
+
+    def _method_factory_reset(self) -> bool:
+        """Factory reset (mock)."""
+        logger.warning("Factory reset requested")
+        return True
+
+    # =========================================================================
+    # Path Management
+    # =========================================================================
+
+    def set_path(self, path: str, value: Any, **kwargs) -> bool:
+        """Set D-Bus path value."""
+        try:
+            if self._mock_mode:
+                self._paths[path] = value
+                self._emit_change(path, value)
+            else:
+                super().add_path(path, value, **kwargs)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to set path {path}: {e}")
+            return False
+
+    def get_path(self, path: str) -> Any:
+        """Get D-Bus path value."""
+        if self._mock_mode:
+            return self._paths.get(path)
+        try:
+            return self[path]
+        except KeyError:
+            return None
+
+    def update_path(self, path: str, value: Any) -> bool:
+        """Update D-Bus path value (only if changed)."""
+        current = self.get_path(path)
+        if current != value:
+            return self.set_path(path, value)
+        return False
+
+    def _on_path_changed(self, path: str, value: Any) -> None:
+        """Handle path change events."""
+        self._emit_change(path, value)
+
+    def _emit_change(self, path: str, value: Any) -> None:
+        """Emit change event to callbacks."""
+        for callback in self._callbacks.get(path, []):
+            try:
+                callback(path, value)
+            except Exception as e:
+                logger.error(f"Callback error for {path}: {e}")
+
+        for callback in self._callbacks.get("*", []):
+            try:
+                callback(path, value)
+            except Exception as e:
+                logger.error(f"Wildcard callback error: {e}")
+
+    def register_callback(self, event: str, callback: Callable) -> None:
+        """Register callback for path changes."""
+        if event not in self._callbacks:
+            self._callbacks[event] = []
+        self._callbacks[event].append(callback)
+
+    def unregister_callback(self, event: str, callback: Callable) -> None:
+        """Unregister callback."""
+        if event in self._callbacks:
+            self._callbacks[event].remove(callback)
+
+    # =========================================================================
+    # DVCC Integration
+    # =========================================================================
+
+    def set_max_charge_current(self, current: float) -> bool:
+        """Set max charge current (DVCC)."""
+        return self.update_path(_PATH_DCC_MAX_CHARGE_CURRENT, current)
+
+    def set_max_discharge_current(self, current: float) -> bool:
+        """Set max discharge current (DVCC)."""
+        return self.update_path(_PATH_DCC_MAX_DISCHARGE_CURRENT, current)
+
+    def set_max_charge_voltage(self, voltage: float) -> bool:
+        """Set max charge voltage (DVCC)."""
+        return self.update_path(_PATH_DCC_MAX_CHARGE_VOLTAGE, voltage)
+
+    def set_allow_charge(self, allow: bool) -> bool:
+        """Set allow charge (DVCC)."""
+        return self.update_path(_PATH_DCC_ALLOW_CHARGE, 1 if allow else 0)
+
+    def set_allow_discharge(self, allow: bool) -> bool:
+        """Set allow discharge (DVCC)."""
+        return self.update_path(_PATH_DCC_ALLOW_DISCHARGE, 1 if allow else 0)
+
+    # =========================================================================
+    # Alarm Management
+    # =========================================================================
+
+    def set_alarm(self, alarm: str, active: bool) -> bool:
+        """Set alarm state."""
+        alarm_paths = {
+            "low_soc": _PATH_ALARM_LOW_SOC,
+            "high_temperature": _PATH_ALARM_HIGH_TEMPERATURE,
+            "low_temperature": _PATH_ALARM_LOW_TEMPERATURE,
+            "cell_imbalance": _PATH_ALARM_CELL_IMBALANCE,
+            "internal_failure": _PATH_ALARM_INTERNAL_FAILURE,
+        }
+
+        path = alarm_paths.get(alarm)
+        if not path:
+            logger.warning(f"Unknown alarm: {alarm}")
+            return False
+
+        value = 1 if active else 0
+        self._alarms[alarm] = value
+        return self.update_path(path, value)
+
+    def get_alarms(self) -> Dict[str, int]:
+        """Get all alarm states."""
+        return self._alarms.copy()
+
+    def clear_all_alarms(self) -> bool:
+        """Clear all alarms."""
+        success = True
+        for alarm in self._alarms:
+            if not self.set_alarm(alarm, False):
+                success = False
+        return success
+
+    # =========================================================================
+    # Connection Management
+    # =========================================================================
+
+    @property
+    def connected(self) -> bool:
+        """Check if service is connected to D-Bus."""
+        return self._connected
+
+    def set_connected(self, connected: bool) -> None:
+        """Set connection status."""
+        self._connected = connected
+        self.update_path(_PATH_CONNECTED, 1 if connected else 0)
+
+    def shutdown(self) -> None:
+        """Graceful shutdown."""
+        logger.info("Shutting down D-Bus service")
+        self.set_connected(False)
+        if not self._mock_mode:
+            self.quit()
+
+    # =========================================================================
+    # Battery-specific helpers
+    # =========================================================================
+
+    def update_battery_data(
+        self,
+        voltage: Optional[float] = None,
+        current: Optional[float] = None,
+        soc: Optional[float] = None,
+        temperature: Optional[float] = None,
+        capacity: Optional[float] = None,
+        cell_voltages: Optional[List[float]] = None,
+    ) -> None:
+        """Update battery data from telemetry."""
+        if voltage is not None:
+            self.update_path("/Dc/0/Voltage", voltage)
+        if current is not None:
+            self.update_path("/Dc/0/Current", current)
+            self.update_path("/Dc/0/Power", voltage * current if voltage else 0)
+        if soc is not None:
+            self.update_path("/Soc", soc)
+        if temperature is not None:
+            self.update_path("/Dc/0/Temperature", temperature)
+        if capacity is not None:
+            self.update_path("/Capacity", capacity)
+        if cell_voltages:
+            for i, v in enumerate(cell_voltages):
+                self.update_path(f"/CellVoltages/{i}", v)
+
+    # =========================================================================
+    # PV Inverter helpers
+    # =========================================================================
+
+    def update_pv_data(
+        self,
+        power: Optional[float] = None,
+        voltage: Optional[float] = None,
+        current: Optional[float] = None,
+        frequency: Optional[float] = None,
+        energy_forward: Optional[float] = None,
+        energy_reverse: Optional[float] = None,
+        phase: str = "L1",
+    ) -> None:
+        """Update PV inverter data."""
+        if power is not None:
+            self.update_path("/Ac/Power", power)
+        if voltage is not None:
+            self.update_path(f"/Ac/{phase}/Voltage", voltage)
+        if current is not None:
+            self.update_path(f"/Ac/{phase}/Current", current)
+            if voltage:
+                self.update_path(f"/Ac/{phase}/Power", voltage * current)
+        if frequency is not None:
+            self.update_path("/Ac/Frequency", frequency)
+        if energy_forward is not None:
+            self.update_path("/Ac/Energy/Forward", energy_forward)
+        if energy_reverse is not None:
+            self.update_path("/Ac/Energy/Reverse", energy_reverse)
+
+    # =========================================================================
+    # Grid Meter helpers
+    # =========================================================================
+
+    def update_grid_data(
+        self,
+        power: Optional[float] = None,
+        voltage: Optional[float] = None,
+        current: Optional[float] = None,
+        energy_forward: Optional[float] = None,
+        energy_reverse: Optional[float] = None,
+        frequency: Optional[float] = None,
+        phase: str = "L1",
+    ) -> None:
+        """Update grid meter data."""
+        if power is not None:
+            self.update_path("/Ac/Power", power)
+        if voltage is not None:
+            self.update_path(f"/Ac/{phase}/Voltage", voltage)
+        if current is not None:
+            self.update_path(f"/Ac/{phase}/Current", current)
+            if voltage:
+                self.update_path(f"/Ac/{phase}/Power", voltage * current)
+        if energy_forward is not None:
+            self.update_path("/Ac/Energy/Forward", energy_forward)
+        if energy_reverse is not None:
+            self.update_path("/Ac/Energy/Reverse", energy_reverse)
+        if frequency is not None:
+            self.update_path("/Ac/Frequency", frequency)
+
+
+# =============================================================================
+# Mock Service for Local Development
+# =============================================================================
+
+class MockDbusService:
+    """Mock D-Bus service for local development without Venus OS."""
+
+    def __init__(self, config: Config, device_type: str, instance: int) -> None:
+        self.config = config
+        self.device_type = device_type
+        self.instance = instance
+        self.service_name = f"com.victronenergy.mock.{device_type}_{instance}"
+        self._paths: Dict[str, Any] = {}
+        self._callbacks: Dict[str, List[Callable]] = {}
+        self._connected = True
+        logger.info(f"Mock D-Bus service: {self.service_name}")
+
+    def set_path(self, path: str, value: Any) -> bool:
+        self._paths[path] = value
+        return True
+
+    def get_path(self, path: str) -> Any:
+        return self._paths.get(path)
+
+    def update_path(self, path: str, value: Any) -> bool:
+        if self._paths.get(path) != value:
+            return self.set_path(path, value)
+        return False
+
+    def set_connected(self, connected: bool) -> None:
+        self._connected = connected
+
+    def shutdown(self) -> None:
+        self._connected = False
+
+    def register_callback(self, event: str, callback: Callable) -> None:
+        if event not in self._callbacks:
+            self._callbacks[event] = []
+        self._callbacks[event].append(callback)
+
+    @property
+    def connected(self) -> bool:
+        return self._connected
+
+
+# For testing/mock purposes
+def create_service(
+    config: Config,
+    device_type: str = "{{ device_type }}",
+    instance: int = {{ service_instance }},
+    service_name: str = "{{ service_name }}",
+    mock: bool = False,
+) -> Union[{{ class_name }}Service, MockDbusService]:
+    """Factory function to create service instance."""
+    if mock or not VEDBUS_AVAILABLE:
+        return MockDbusService(config, device_type, instance)
+    return {{ class_name }}Service(config, device_type, instance, service_name)

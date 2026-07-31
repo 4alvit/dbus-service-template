@@ -1,0 +1,16 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+select = ["E", "F", "I", "W", "UP", "B", "C4", "SIM", "T20"]
+ignore = ["S101", "B008", "T201", "T203"]
+per-file-ignores = { "tests/*" = ["S101", "B011", "T201"] }
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "lf"
+
+[tool.ruff.lint.isort]
+known-first-party = ["{{ module_name }}"]
+import-headings = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCAL"]
