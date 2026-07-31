@@ -4,7 +4,79 @@
 
 Generated from [dbus-service-template](https://github.com/4alvit/dbus-service-template) using [Copier](https://copier.readthedocs.io/).
 
+---
+
+## Example Generated Output
+
+When you generate a project with `copier copy gh:4alvit/dbus-service-template my-battery-monitor` and provide:
+
+```yaml
+project_name: "My Battery Monitor"
+project_description: "JBD BMS to Venus OS D-Bus bridge"
+device_type: "battery"
+include_ha_discovery: true
+include_dvcc: true
+```
+
+The generated `README.md` will look like:
+
+---
+
+# My Battery Monitor
+
+JBD BMS to Venus OS D-Bus bridge
+
+Generated from [dbus-service-template](https://github.com/4alvit/dbus-service-template) using [Copier](https://copier.readthedocs.io/).
+
 ## Quick Start
+
+```bash
+# Install dependencies
+pip install -e ".[dev]"
+
+# Run locally (mock D-Bus)
+python -m my_battery_monitor --log-level DEBUG
+
+# Run tests
+pytest -v --cov=src/my_battery_monitor
+
+# Lint
+ruff check .
+mypy src/my_battery_monitor
+```
+
+...
+
+## D-Bus Paths (Standard Victron)
+
+Standard paths (auto-created):
+- `/Connected` - 1=connected, 0=disconnected
+- `/DeviceInstance` - Instance number
+- `/ProductId`, `/ProductName`, `/FirmwareVersion`
+- `/CustomName` - User-editable name
+
+Device-type specific paths:
+- `/Soc` - State of Charge (%)
+- `/Dc/0/Voltage`, `/Dc/0/Current`, `/Dc/0/Power`
+- `/Capacity`, `/TimeRemaining`
+- `/Alarm/*` - Alarm states
+
+## DVCC Integration
+
+Dynamic Voltage/Current Control paths:
+- `/Dc/0/MaxChargeCurrent`
+- `/Dc/0/MaxDischargeCurrent`
+- `/Dc/0/MaxChargeVoltage`
+- `/Dc/0/AllowCharge`
+- `/Dc/0/AllowDischarge`
+
+Use `service.set_max_charge_current(50.0)` to limit charging.
+
+...
+
+---
+
+*Template variables above (`{{ ... }}`) are replaced with actual values during project generation.*
 
 ```bash
 # Install dependencies
