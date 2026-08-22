@@ -113,7 +113,7 @@ graph LR
 ```mermaid
 graph LR
     IPK[.ipk Package] -->|opkg install| VENOS[Cerbo GX / Ekrano]
-    VENOS -->|systemd| SERVICE{{#if service_instance}}_{{service_instance}}{{/if}}
+    VENOS -->|systemd| SERVICE_1
     SERVICE -->|D-Bus| DBUS
     VENOS -->|rc.local| PERSIST[Firmware Survive]
     SERVICE -->|MQTT| BROKER[127.0.0.1:1883]
