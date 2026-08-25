@@ -1,0 +1,109 @@
+name: Generate & Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  render-script:
+    name: Lint render script
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+
+      - name: Lint render script
+        run: |
+          pip install --only-binary :all: ruff==0.5.0
+          ruff check --extend-exclude=.github/workflows/ scripts/
+
+  generate:
+    name: Generate project
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+
+      - name: Install render deps
+        run: |
+          pip install --only-binary :all: jinja2 pyyaml
+
+      - name: Generate project
+        run: |
+          python scripts/render_template.py generated_project
+
+      - name: Show generated structure
+        run: |
+          find generated_project -name "*.py" | sort
+
+      - name: Upload generated project
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: generated-project
+          path: generated_project
+          retention-days: 1
+
+  test-generated:
+    name: Test generated project
+    runs-on: ubuntu-latest
+    needs: generate
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+
+      - name: Download generated project
+        uses: actions/download-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: generated-project
+
+      - name: Install generated project
+        run: |
+          pip install -e generated_project/.[dev]
+
+      - name: Ruff check (src)
+        run: |
+          ruff check generated_project/src/
+
+      - name: Pytest
+        run: |
+          pytest generated_project/tests/ -v --cov=src/my_d_bus_service --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238
+        if: always()
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+          name: generated-project
