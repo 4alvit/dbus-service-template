@@ -84,13 +84,18 @@ jobs:
           python-version: "3.11"
 
       - name: Download generated project
-        uses: actions/download-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087e40e8b5a5461e7c
         with:
           name: generated-project
 
       - name: Install generated project
         run: |
-          pip install -e generated_project/.[dev]
+          pip install generated_project
+          pip install --only-binary :all: \
+            "paho-mqtt>=2.0" "pydantic>=2.7" "pydantic-settings>=2.3" \
+            "pyyaml>=6.0" "click>=8.1" "jinja2>=3.1" \
+            "pytest>=8.2" "pytest-asyncio>=0.23" "pytest-cov>=5.0" \
+            "pytest-mock>=3.14" "ruff>=0.5" "mypy>=1.10" "pre-commit>=3.7"
 
       - name: Ruff check (src)
         run: |
