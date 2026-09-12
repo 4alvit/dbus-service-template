@@ -135,6 +135,7 @@ def render_tree(
             dst_path = dst_file
         else:
             shutil.copyfile(src_path, dst_path)
+        shutil.copymode(src_path, dst_path)
         written.append(dst_path)
     return written
 
