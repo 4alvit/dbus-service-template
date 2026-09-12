@@ -6,6 +6,12 @@ Generated from [dbus-service-template](https://github.com/4alvit/dbus-service-te
 
 ---
 
+<!-- ci-release-process:start -->
+## CI and deployment
+
+See [CI and deployment workflow](docs/release-workflow.md) for required checks and local commands. This repository uses validation-only policy; application release channels do not apply.
+<!-- ci-release-process:end -->
+
 ## Generate a project
 
 From a checkout of this template, run `python scripts/render_template.py output-dir`
