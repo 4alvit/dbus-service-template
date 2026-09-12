@@ -10,12 +10,30 @@ import json
 
 {% if cookiecutter.mqtt_enabled %}
 from {{ module_name }}.mqtt_bridge import MQTTBridge
-from {{ module_name }}.config import MQTTConfig
+from {{ module_name }}.config import Config, MQTTConfig
 from {{ module_name }}.service import {{ class_name }}Service
 
 
 class TestMQTTBridge:
     """Test MQTT bridge functionality."""
+
+    @pytest.mark.parametrize("clean_session", [True, False])
+    def test_real_client_construction(self, clean_session):
+        """Build a real Paho client and real service without connecting to a broker."""
+        import paho.mqtt.client as mqtt
+
+        config = Config()
+        config.mqtt.clean_session = clean_session
+        service = {{ class_name }}Service(config, device_type="battery", instance=17)
+        bridge = MQTTBridge(config.mqtt, service)
+        bridge._create_client()
+
+        assert bridge._client is not None
+        assert bridge._client._protocol == mqtt.MQTTv311
+        assert bridge._client._client_id == f"{config.mqtt.client_id}_17".encode()
+        assert bridge._client._clean_session is clean_session
+        assert not bridge._client.is_connected()
+        assert f"{config.mqtt.topic_prefix}/cell_voltage/017" in bridge._topic_to_path
 
     @pytest.fixture
     def mqtt_config(self):
@@ -32,7 +50,7 @@ class TestMQTTBridge:
         """Create mock D-Bus service."""
         service = Mock(spec={{ class_name }}Service)
         service.service_name = "com.victronenergy.test"
-        service.device_instance = 0
+        service.instance = 0
         service.device_type = "battery"
         service.set_path = Mock(return_value=True)
         service.get_path = Mock(return_value=0)
@@ -109,7 +127,7 @@ class TestMQTTBridge:
         # Check that JSON was published
         call_args = bridge._client.publish.call_args
         assert call_args is not None
-        published_payload = call_args[1]["payload"] if call_args[1] else call_args[0][1]
+        published_payload = call_args.args[1]
         assert "key" in published_payload
 
     def test_publish_not_connected(self, mqtt_config, mock_dbus_service):

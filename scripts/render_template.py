@@ -13,13 +13,13 @@ Usage:
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
-from jinja2.exceptions import UndefinedError
 
 TEMPLATE_ROOT = Path(__file__).resolve().parent.parent
 
@@ -50,7 +50,9 @@ DEFAULT_CTX: dict[str, Any] = {
 
 # Skip the source-of-truth template files (this script + its data) and the
 # copier config so the generated project is a self-contained output.
-SKIP_NAMES = {"copier.yml", ".copier-answers.yml.example", "render_template.py"}
+SKIP_NAMES = {
+    "copier.yml", ".copier-answers.yml.example", "render_template.py", "test_render_template.py"
+}
 
 # Files that exist as templates for copier's own use; we re-render them
 # directly and strip the suffix. Anything not in this set is copied as-is.
@@ -97,16 +99,16 @@ def _render_path(rel: Path, env: Environment, ctx: dict[str, Any]) -> Path:
     return Path(*parts)
 
 
-def _try_render(src_path: Path, env: Environment, ctx: dict[str, Any]) -> str | None:
-    """Render ``src_path`` with the loader, returning ``None`` on failure."""
-    loader_path = str(src_path.relative_to(TEMPLATE_ROOT))
-    try:
-        return env.get_template(loader_path).render(**ctx)
-    except (UndefinedError, ImportError, TypeError) as exc:
-        # StrictUndefined raises UndefinedError for missing vars.
-        # Loader issues raise ImportError/TypeError.
-        print(f"warn: render failed for {src_path}: {exc}", file=sys.stderr)
-        return None
+def _render_template(src_path: Path, env: Environment, ctx: dict[str, Any]) -> str:
+    """Render Jinja variables while preserving literal GitHub Actions expressions."""
+    source = re.sub(
+        r"\$\{\{.*?\}\}",
+        lambda match: "{% raw %}" + match.group() + "{% endraw %}",
+        src_path.read_text(),
+        flags=re.DOTALL,
+    )
+    # StrictUndefined must fail instead of silently shipping an unrendered file.
+    return env.from_string(source).render(**ctx)
 
 
 def render_tree(
@@ -128,11 +130,9 @@ def render_tree(
         dst_path.parent.mkdir(parents=True, exist_ok=True)
         if src_path.suffix in TEMPLATE_SUFFIXES:
             dst_file = dst_path.with_name(src_path.stem)  # drop the trailing .j2
-            rendered = _try_render(src_path, env, ctx)
-            if rendered is None:
-                shutil.copyfile(src_path, dst_file)
-            else:
-                dst_file.write_text(rendered)
+            rendered = _render_template(src_path, env, ctx)
+            dst_file.write_text(rendered)
+            dst_path = dst_file
         else:
             shutil.copyfile(src_path, dst_path)
         written.append(dst_path)

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 D-Bus Service Core - {{ class_name }}Service
 ============================================================
@@ -12,10 +11,11 @@ from __future__ import annotations
 
 import logging
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any
 
-from .config import Config, DeviceConfig
+from .config import Config
 
 # Venus OS velib_python path
 VELIB_PATHS = [
@@ -30,7 +30,6 @@ for p in VELIB_PATHS:
 
 # Optional imports - available on Venus OS
 try:
-    from vedbus import VeDbusService
     import dbus
     from dbus.mainloop.glib import DBusGMainLoop
     from gi.repository import GLib
@@ -105,8 +104,8 @@ class {{ class_name }}Service(VeDbusService):
 
         # Initialize VeDbusService
         if self._mock_mode:
-            self._paths: Dict[str, Any] = {}
-            self._callbacks: Dict[str, List[Callable]] = {}
+            self._paths: dict[str, Any] = {}
+            self._callbacks: dict[str, list[Callable]] = {}
         else:
             super().__init__(self.service_name, GLib.MainLoop())
             self._callbacks = {}
@@ -114,7 +113,7 @@ class {{ class_name }}Service(VeDbusService):
         # Service state
         self._connected = False
         self._callbacks_registered = False
-        self._alarms: Dict[str, int] = {}
+        self._alarms: dict[str, int] = {}
 
         # Initialize standard paths
         self._init_standard_paths()
@@ -419,7 +418,7 @@ class {{ class_name }}Service(VeDbusService):
         self._alarms[alarm] = value
         return self.update_path(path, value)
 
-    def get_alarms(self) -> Dict[str, int]:
+    def get_alarms(self) -> dict[str, int]:
         """Get all alarm states."""
         return self._alarms.copy()
 
@@ -458,12 +457,12 @@ class {{ class_name }}Service(VeDbusService):
 
     def update_battery_data(
         self,
-        voltage: Optional[float] = None,
-        current: Optional[float] = None,
-        soc: Optional[float] = None,
-        temperature: Optional[float] = None,
-        capacity: Optional[float] = None,
-        cell_voltages: Optional[List[float]] = None,
+        voltage: float | None = None,
+        current: float | None = None,
+        soc: float | None = None,
+        temperature: float | None = None,
+        capacity: float | None = None,
+        cell_voltages: list[float] | None = None,
     ) -> None:
         """Update battery data from telemetry."""
         if voltage is not None:
@@ -487,12 +486,12 @@ class {{ class_name }}Service(VeDbusService):
 
     def update_pv_data(
         self,
-        power: Optional[float] = None,
-        voltage: Optional[float] = None,
-        current: Optional[float] = None,
-        frequency: Optional[float] = None,
-        energy_forward: Optional[float] = None,
-        energy_reverse: Optional[float] = None,
+        power: float | None = None,
+        voltage: float | None = None,
+        current: float | None = None,
+        frequency: float | None = None,
+        energy_forward: float | None = None,
+        energy_reverse: float | None = None,
         phase: str = "L1",
     ) -> None:
         """Update PV inverter data."""
@@ -517,12 +516,12 @@ class {{ class_name }}Service(VeDbusService):
 
     def update_grid_data(
         self,
-        power: Optional[float] = None,
-        voltage: Optional[float] = None,
-        current: Optional[float] = None,
-        energy_forward: Optional[float] = None,
-        energy_reverse: Optional[float] = None,
-        frequency: Optional[float] = None,
+        power: float | None = None,
+        voltage: float | None = None,
+        current: float | None = None,
+        energy_forward: float | None = None,
+        energy_reverse: float | None = None,
+        frequency: float | None = None,
         phase: str = "L1",
     ) -> None:
         """Update grid meter data."""
@@ -554,8 +553,8 @@ class MockDbusService:
         self.device_type = device_type
         self.instance = instance
         self.service_name = f"com.victronenergy.mock.{device_type}_{instance}"
-        self._paths: Dict[str, Any] = {}
-        self._callbacks: Dict[str, List[Callable]] = {}
+        self._paths: dict[str, Any] = {}
+        self._callbacks: dict[str, list[Callable]] = {}
         self._connected = True
         logger.info(f"Mock D-Bus service: {self.service_name}")
 
@@ -594,7 +593,7 @@ def create_service(
     instance: int = {{ service_instance }},
     service_name: str = "{{ service_name }}",
     mock: bool = False,
-) -> Union[{{ class_name }}Service, MockDbusService]:
+) -> {{ class_name }}Service | MockDbusService:
     """Factory function to create service instance."""
     if mock or not VEDBUS_AVAILABLE:
         return MockDbusService(config, device_type, instance)

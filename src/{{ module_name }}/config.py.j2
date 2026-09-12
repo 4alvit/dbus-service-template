@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Configuration models for {{ class_name }}
 
@@ -10,7 +9,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -21,13 +20,13 @@ class DeviceConfig(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="DEVICE_")
 
-    model: str = Field(default="{{ class_name }}", alias="model")
-    product_id: int = Field(default=0x0001, alias="product_id")
-    product_name: str = Field(default="{{ project_name }}", alias="product_name")
-    firmware_version: str = Field(default="0.1.0", alias="firmware_version")
-    hardware_version: str = Field(default="1.0", alias="hardware_version")
-    serial_number: str = Field(default="SN00000001", alias="serial_number")
-    custom_name: str = Field(default="", alias="custom_name")
+    model: str = Field(default="{{ class_name }}")
+    product_id: int = Field(default=0x0001)
+    product_name: str = Field(default="{{ project_name }}")
+    firmware_version: str = Field(default="0.1.0")
+    hardware_version: str = Field(default="1.0")
+    serial_number: str = Field(default="SN00000001")
+    custom_name: str = Field(default="")
 
     # Device identification
     manufacturer: str = "Victron Energy"
@@ -43,13 +42,13 @@ class MQTTConfig(BaseSettings):
     broker: str = "{{ mqtt_broker_default }}"
     port: int = {{ mqtt_port_default }}
     use_tls: bool = False
-    ca_cert: Optional[str] = None
-    client_cert: Optional[str] = None
-    client_key: Optional[str] = None
+    ca_cert: str | None = None
+    client_cert: str | None = None
+    client_key: str | None = None
 
     # Authentication
-    username: Optional[str] = None
-    password: Optional[str] = None
+    username: str | None = None
+    password: str | None = None
 
     # Client settings
     client_id: str = "{{ module_name }}"
@@ -66,7 +65,7 @@ class MQTTConfig(BaseSettings):
 
     # Home Assistant discovery
     ha_discovery: bool = {% if cookiecutter.include_ha_discovery %}True{% else %}False{% endif %}
-    device_name: Optional[str] = None
+    device_name: str | None = None
 
     @field_validator("port")
     @classmethod
@@ -226,7 +225,7 @@ class Config(BaseSettings):
         return self.pv_inverter.max_power
 
 
-def load_config(config_path: Optional[Union[str, Path]] = None) -> Config:
+def load_config(config_path: str | Path | None = None) -> Config:
     """
     Load configuration from YAML file with environment variable overrides.
 
@@ -236,7 +235,7 @@ def load_config(config_path: Optional[Union[str, Path]] = None) -> Config:
     Returns:
         Config instance with merged settings.
     """
-    config_dict: Dict[str, Any] = {}
+    config_dict: dict[str, Any] = {}
 
     # Search for config file if not provided
     if config_path is None:
@@ -266,7 +265,7 @@ def load_config(config_path: Optional[Union[str, Path]] = None) -> Config:
     return Config(**config_dict)
 
 
-def _load_env_config() -> Dict[str, Any]:
+def _load_env_config() -> dict[str, Any]:
     """Load configuration from environment variables."""
     config = {}
 
@@ -316,7 +315,7 @@ def _parse_env_value(value: str) -> Any:
     return value
 
 
-def _merge_dicts(base: Dict, override: Dict) -> Dict:
+def _merge_dicts(base: dict, override: dict) -> dict:
     """Deep merge two dictionaries."""
     result = base.copy()
     for key, value in override.items():
@@ -328,14 +327,16 @@ def _merge_dicts(base: Dict, override: Dict) -> Dict:
 
 
 # Backwards compatibility
-BatteryData = Dict[str, Any]
-PVInverterData = Dict[str, Any]
-GridMeterData = Dict[str, Any]
-TankData = Dict[str, Any]
-TemperatureData = Dict[str, Any]
+BatteryData = dict[str, Any]
+PVInverterData = dict[str, Any]
+GridMeterData = dict[str, Any]
+TankData = dict[str, Any]
+TemperatureData = dict[str, Any]
 
 
-def get_data_model(device_type: str) -> Type[Union[BatteryData, PVInverterData, GridMeterData, TankData, TemperatureData, Dict]]:
+def get_data_model(
+    device_type: str,
+) -> type[BatteryData | PVInverterData | GridMeterData | TankData | TemperatureData | dict]:
     """Get appropriate data model for device type."""
     models = {
         "battery": BatteryData,
@@ -344,4 +345,4 @@ def get_data_model(device_type: str) -> Type[Union[BatteryData, PVInverterData, 
         "tank": TankData,
         "temperature": TemperatureData,
     }
-    return models.get(device_type.lower(), Dict)
+    return models.get(device_type.lower(), dict)
