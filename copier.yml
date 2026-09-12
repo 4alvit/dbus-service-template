@@ -82,7 +82,7 @@ topic_prefix:
 
 venus_os_package:
   type: bool
-  help: Include Venus OS IPK packaging (Makefile, setup script, systemd)
+  help: Include native Venus OS SetupHelper packaging (daemontools)
   default: true
 
 github_org:

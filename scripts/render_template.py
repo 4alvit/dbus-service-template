@@ -92,7 +92,7 @@ def _render_path(rel: Path, env: Environment, ctx: dict[str, Any]) -> Path:
     """Replace Jinja expressions in path segments (e.g. ``{{ module_name }}``)."""
     parts: list[str] = []
     for segment in rel.parts:
-        if segment.startswith("{{") and segment.endswith("}}"):
+        if "{{" in segment:
             parts.append(str(_eval_expr(segment, env, ctx)))
         else:
             parts.append(segment)
@@ -135,6 +135,7 @@ def render_tree(
             dst_path = dst_file
         else:
             shutil.copyfile(src_path, dst_path)
+        shutil.copymode(src_path, dst_path)
         written.append(dst_path)
     return written
 
