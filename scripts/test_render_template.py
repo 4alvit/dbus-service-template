@@ -4,8 +4,14 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from jinja2 import Environment, StrictUndefined, UndefinedError
-from render_template import DEFAULT_CTX, _render_template, render_tree
+from jinja2 import UndefinedError
+
+from render_template import (
+    DEFAULT_CTX,
+    _render_template,
+    render_environment,
+    render_tree,
+)
 
 
 class RenderTemplateTests(unittest.TestCase):
@@ -21,7 +27,7 @@ class RenderTemplateTests(unittest.TestCase):
                 "asset: ${{ steps.package.outputs.path }}\n"
             )
             rendered = _render_template(
-                source, Environment(undefined=StrictUndefined), DEFAULT_CTX
+                source, render_environment(), DEFAULT_CTX
             )
             self.assertIn("name: My D-Bus Service", rendered)
             self.assertIn("${{ secrets.GITHUB_TOKEN }}", rendered)
@@ -37,7 +43,7 @@ class RenderTemplateTests(unittest.TestCase):
                 render_tree(
                     source,
                     Path(directory) / "output",
-                    Environment(undefined=StrictUndefined),
+                    render_environment(),
                     DEFAULT_CTX,
                 )
 
@@ -53,11 +59,36 @@ class RenderTemplateTests(unittest.TestCase):
             written = render_tree(
                 source,
                 output,
-                Environment(undefined=StrictUndefined),
+                render_environment(),
                 {**DEFAULT_CTX, "mqtt_enabled": False},
             )
             self.assertEqual(written, [output / "feature.py"])
-            self.assertEqual(written[0].read_text(), "enabled = False")
+            self.assertEqual(written[0].read_text(), "enabled = False\n")
+
+    def test_source_code_characters_remain_literal(self):
+        """HTML escaping must not corrupt generated source operators or quotes."""
+        value = "1 < 2 and 'x' != '&'"
+        with TemporaryDirectory() as directory:
+            for suffix in ("py", "yaml", "sh", "md"):
+                with self.subTest(suffix=suffix):
+                    source = Path(directory) / f"source.{suffix}.j2"
+                    source.write_text("{{ expression }}\n")
+                    rendered = _render_template(
+                        source, render_environment(), {"expression": value}
+                    )
+                    self.assertEqual(rendered, value + "\n")
+
+    def test_html_and_xml_outputs_escape_values(self):
+        """Select escaping by the output suffix, including templates read as strings."""
+        with TemporaryDirectory() as directory:
+            for suffix in ("html", "htm", "xml"):
+                with self.subTest(suffix=suffix):
+                    source = Path(directory) / f"page.{suffix}.j2"
+                    source.write_text("{{ value }}")
+                    rendered = _render_template(
+                        source, render_environment(), {"value": '<tag attr="value">&'}
+                    )
+                    self.assertEqual(rendered, "&lt;tag attr=&#34;value&#34;&gt;&amp;")
 
 
 if __name__ == "__main__":
