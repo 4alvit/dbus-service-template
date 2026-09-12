@@ -32,7 +32,7 @@ copies; a green syntax/validate job is not a reviewed plan or a deployment.
 
 - Hardware-free checks do not validate a live Venus OS device, D-Bus firmware ABI, physical sensors or in-place device upgrades.
 - Candidate packaging preserves committed runtime version metadata. Nightly/beta/RC identity is recorded by the release manifest.
-- This template has no released version metadata. It receives PR/nightly template validation; application RC/stable publication is disabled.
+- This repository is a reusable template; generated application versions are parameters. PR/nightly template validation is required; automatic template RC/stable publication is disabled.
 - Dependency review remains a PR-only comparison; callable full-source validation workflows run for nightly and candidate checks.
 
 For public repositories, merge and verify the workflows before enabling the

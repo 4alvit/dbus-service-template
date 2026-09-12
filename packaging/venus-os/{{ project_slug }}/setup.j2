@@ -1,92 +1,83 @@
 #!/bin/bash
-
-# {{ project_name }} SetupHelper compatible setup script
-# D-Bus service for Venus OS
-
-#### following line incorporates SetupHelper resources into this script
-source "/data/SetupHelper/HelperResources/IncludeHelpers"
-#### end of lines to include helper resources
-
-# Package info
-packageName="{{ project_slug }}"
-serviceName="{{ project_slug }}"
-
-#### running manually - prompt for input
-if [ "$scriptAction" == 'NONE' ]; then
+# Native Venus OS installation: persistent /data files and daemontools.
+source /data/SetupHelper/HelperResources/IncludeHelpers
+if [ "$scriptAction" = NONE ]; then
     standardActionPrompt
 fi
 
-#### install
-if [ "$scriptAction" == 'INSTALL' ]; then
-    logMessage "Installing $packageName"
+set -e
+PACKAGE_DIR=/data/{{ project_slug }}
+SOURCE_DIR=$(cd "$(dirname "$0")/../../.." && pwd)
+SERVICE_DIR="$PACKAGE_DIR/service/{{ project_slug }}"
 
-    # Create directories
-    mkdir -p /data/{{ project_slug }}
-    mkdir -p /var/log/{{ project_slug }}
-
-    # Install Python scripts
-    cp "$scriptDir/../src/{{ module_name }}"/*.py /data/{{ project_slug }}/
-    chmod +x /data/{{ project_slug }}/*.py
-
-{% if cookiecutter.include_gui %}
-    # Install QML files (GUI pages) if present
-    if [ -d "$scriptDir/../src/{{ module_name }}/qml" ]; then
-        mkdir -p /data/{{ project_slug }}/qml
-        cp -r "$scriptDir/../src/{{ module_name }}/qml/"*.qml /data/{{ project_slug }}/qml/ 2>/dev/null || true
-        logMessage "Installed QML files"
+if [ "$scriptAction" = INSTALL ]; then
+    # Fail before stopping an existing service if offline dependencies are absent.
+    PYTHON=python3
+    if [ -x "$PACKAGE_DIR/.venv/bin/python" ]; then
+        PYTHON="$PACKAGE_DIR/.venv/bin/python"
     fi
-{% endif %}
-
-    # Create systemd service
-    cat > "/etc/systemd/system/{{ project_slug }}.service" << EOF
-[Unit]
-Description={{ project_name }}
-After=network.target dbus.service
-Wants=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/data/{{ project_slug }}
-ExecStart=/usr/bin/python3 -u {{ module_name }}.py
-Restart=on-failure
-RestartSec=10
-StandardOutput=journal
-StandardError=journal
-
-# Environment
-Environment=PYTHONUNBUFFERED=1
-Environment=MQTT_BROKER=127.0.0.1
-Environment=MQTT_PORT=1883
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    # Enable and start service
-    systemctl daemon-reload
-    systemctl enable {{ project_slug }}
-    systemctl start {{ project_slug }}
-
-    logMessage "Installation complete"
+    PYTHONPATH="$SOURCE_DIR/src" "$PYTHON" -c 'import dbus, gi, pydantic_settings, yaml{% if mqtt_enabled %}, paho.mqtt.client{% endif %}' || exit 1
+    if [ -e /service/{{ project_slug }} ]; then
+        svc -d /service/{{ project_slug }}
+        sleep 2
+    fi
+    mkdir -p "$PACKAGE_DIR/src" "$SERVICE_DIR/log" /var/log/{{ project_slug }}
+    if [ "$SOURCE_DIR" != "$PACKAGE_DIR" ]; then
+        cp -a "$SOURCE_DIR/src/{{ module_name }}" "$PACKAGE_DIR/src/"
+    fi
+    if [ ! -f "$PACKAGE_DIR/config.yaml" ]; then
+        cp "$SOURCE_DIR/config.example.yaml" "$PACKAGE_DIR/config.yaml"
+    fi
+    cat > "$SERVICE_DIR/run" <<'RUN'
+#!/bin/sh
+exec 2>&1
+cd /data/{{ project_slug }} || exit 1
+export PYTHONPATH=/data/{{ project_slug }}/src
+export PYTHONUNBUFFERED=1
+export DBUS_SYSTEM_BUS_ADDRESS=unix:path=/var/run/dbus/system_bus_socket
+if [ -x .venv/bin/python ]; then
+    exec .venv/bin/python -m {{ module_name }} --config config.yaml
+fi
+exec python3 -m {{ module_name }} --config config.yaml
+RUN
+    cat > "$SERVICE_DIR/log/run" <<'LOG'
+#!/bin/sh
+mkdir -p /var/log/{{ project_slug }}
+exec multilog t s25000 n4 /var/log/{{ project_slug }}
+LOG
+    chmod +x "$SERVICE_DIR/run" "$SERVICE_DIR/log/run"
+    rm -f "$SERVICE_DIR/down" "$SERVICE_DIR/log/down"
+    ln -snf "$SERVICE_DIR" /service/{{ project_slug }}
+    # Write the hook before a conventional final exit 0 in rc.local.
+    [ -f /data/rc.local ] || printf '#!/bin/sh\n' > /data/rc.local
+    sed -i '/# BEGIN {{ project_slug }}/,/# END {{ project_slug }}/d' /data/rc.local
+    HOOK=$(mktemp /data/.{{ project_slug }}-boot.XXXXXX)
+    cat > "$HOOK" <<'BOOT'
+# BEGIN {{ project_slug }}
+ln -snf /data/{{ project_slug }}/service/{{ project_slug }} /service/{{ project_slug }}
+# END {{ project_slug }}
+BOOT
+    awk -v hook="$HOOK" '
+        function insert_hook() { while ((getline line < hook) > 0) print line; close(hook) }
+        !inserted && /^[[:space:]]*exit[[:space:]]+0[[:space:]]*$/ { insert_hook(); inserted=1 }
+        { print }
+        END { if (!inserted) insert_hook() }
+    ' /data/rc.local > /data/rc.local.{{ project_slug }}
+    chmod +x /data/rc.local.{{ project_slug }}
+    mv /data/rc.local.{{ project_slug }} /data/rc.local
+    rm -f "$HOOK"
+    sleep 2
+    svc -u /service/{{ project_slug }} /service/{{ project_slug }}/log
+    logMessage "Installed {{ project_slug }} with native Venus OS supervision"
 fi
 
-#### uninstall
-if [ "$scriptAction" == 'UNINSTALL' ]; then
-    logMessage "Uninstalling $packageName"
-
-    # Stop and disable service
-    systemctl stop {{ project_slug }} 2>/dev/null || true
-    systemctl disable {{ project_slug }} 2>/dev/null || true
-
-    # Remove systemd service
-    rm -f /etc/systemd/system/{{ project_slug }}.service
-    systemctl daemon-reload
-
-    # Remove Python scripts
-    rm -rf /data/{{ project_slug }}
-
-    logMessage "Uninstallation complete"
+if [ "$scriptAction" = UNINSTALL ]; then
+    svc -dx /service/{{ project_slug }} /service/{{ project_slug }}/log 2>/dev/null || true
+    rm -f /service/{{ project_slug }}
+    if [ -f /data/rc.local ]; then
+        sed -i '/# BEGIN {{ project_slug }}/,/# END {{ project_slug }}/d' /data/rc.local
+    fi
+    # Preserve configuration, virtualenv and data for explicit removal by the owner.
+    logMessage "Uninstalled {{ project_slug }} service; persistent files retained"
 fi
-
 endScript

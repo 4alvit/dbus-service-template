@@ -188,8 +188,8 @@ class Config(BaseSettings):
     poll_interval_ms: int = 1000
 
     # Paths
-    config_dir: Path = Path("/etc/{{ module_name }}")
-    data_dir: Path = Path("/var/lib/{{ module_name }}")
+    config_dir: Path = Path("/data/{{ project_slug }}")
+    data_dir: Path = Path("/data/{{ project_slug }}/data")
     log_dir: Path = Path("/var/log/{{ module_name }}")
 
     @field_validator("log_level")

@@ -90,6 +90,22 @@ class RenderTemplateTests(unittest.TestCase):
                     )
                     self.assertEqual(rendered, "&lt;tag attr=&#34;value&#34;&gt;&amp;")
 
+    def test_native_setup_preserves_mode_and_rendered_path(self):
+        """Keep incoming native installer modes and mixed literal/template paths."""
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "source"
+            source.mkdir()
+            installer = source / "prefix-{{ project_slug }}" / "setup.j2"
+            installer.parent.mkdir()
+            installer.write_text("#!/bin/sh\nexit 0\n")
+            installer.chmod(0o755)
+            output = Path(directory) / "output"
+            written = render_tree(source, output, render_environment(), DEFAULT_CTX)
+            expected = output / "prefix-my-d-bus-service" / "setup"
+            self.assertEqual(written, [expected])
+            self.assertEqual(expected.stat().st_mode & 0o777, 0o755)
+            self.assertEqual(expected.read_text(), "#!/bin/sh\nexit 0\n")
+
 
 if __name__ == "__main__":
     unittest.main()
