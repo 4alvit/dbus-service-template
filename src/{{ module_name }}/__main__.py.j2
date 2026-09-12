@@ -82,14 +82,14 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--mqtt-broker",
-        default="{{ mqtt_broker_default }}",
+        default=None,
         help="MQTT broker address",
     )
 
     parser.add_argument(
         "--mqtt-port",
         type=int,
-        default={{ mqtt_port_default }},
+        default=None,
         help="MQTT broker port",
     )
 
@@ -105,7 +105,7 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--topic-prefix",
-        default="{{ topic_prefix }}",
+        default=None,
         help="MQTT topic prefix",
     )
 
@@ -185,14 +185,17 @@ def main() -> int:
     logging.getLogger().setLevel(args.log_level)
 
     # Load configuration
-    config = load_config(args.config) if args.config else Config()
+    config = load_config(args.config)
 
     # Override config with CLI args
-    config.mqtt.broker = args.mqtt_broker
-    config.mqtt.port = args.mqtt_port
+    if args.mqtt_broker is not None:
+        config.mqtt.broker = args.mqtt_broker
+    if args.mqtt_port is not None:
+        config.mqtt.port = args.mqtt_port
     config.mqtt.username = args.mqtt_username or config.mqtt.username
     config.mqtt.password = args.mqtt_password or config.mqtt.password
-    config.mqtt.topic_prefix = args.topic_prefix
+    if args.topic_prefix is not None:
+        config.mqtt.topic_prefix = args.topic_prefix
 
     logger.info(f"Starting {{ class_name }} v{__version__}")
     logger.info(f"D-Bus instance: {args.instance}")

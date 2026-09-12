@@ -108,24 +108,29 @@ mypy src/{{ module_name }}
 
 ## Venus OS Deployment
 
-Build IPK package:
+Venus OS uses daemontools (`/service`, `svc`, `svstat`) and a persistent
+`/data` partition. The generated `setup` installs there, preserves configuration,
+uses bounded `multilog` output under `/var/log`, and recreates the service link
+from `/data/rc.local` after reboot. It does not download dependencies at boot.
 
-```bash
-docker run --rm -v "$PWD:/src" victron/venus-sdk:latest \
-  make -C /src/packaging/venus-os/{{ project_slug }}
+Bootstrap dependencies on the target with wheels matching its architecture and
+Python ABI. A virtualenv must use `--system-site-packages` to access the firmware's
+`dbus-python` and GLib; never pip-install those bindings over the firmware copies.
+If `venv`/`ensurepip` is absent, prepare an offline bootstrap for that firmware.
+
+Copy the rendered project to `/data/<project_slug>` and run:
+
+```sh
+bash /data/<project_slug>/setup install
+svstat /service/<project_slug> /service/<project_slug>/log
+tail -n 60 /var/log/<project_slug>/current
+bash /data/<project_slug>/setup uninstall
 ```
 
-Install on Venus OS:
-
-```bash
-opkg install *.ipk
-```
-
-Or use SetupHelper:
-
-```bash
-bash setup INSTALL
-```
+Uninstall removes supervision and the boot hook but retains device-local files.
+The old IPK recipe used OpenWrt make includes and systemd, neither of which is a
+supported Venus OS installation method. It now fails with an explicit migration
+message. Systemd examples apply only to a separate Linux development host.
 
 ## Project Structure
 
@@ -133,7 +138,7 @@ bash setup INSTALL
 {{ project_slug }}/
 ├── .github/workflows/     # CI/CD pipelines
 ├── docs/                  # Documentation
-├── packaging/             # Venus OS IPK packaging
+├── packaging/             # Venus OS SetupHelper packaging
 │   └── venus-os/
 ├── src/{{ module_name }}/
 │   ├── __init__.py
@@ -158,7 +163,7 @@ bash setup INSTALL
 | `src/{{ module_name }}/mqtt_bridge.py` | Async MQTT client with reconnection |
 | `src/{{ module_name }}/config.py` | YAML config + env var overrides |
 | `src/{{ module_name }}/models.py` | Pydantic models for device data |
-| `packaging/venus-os/{{ project_slug }}/Makefile` | IPK build for Venus OS |
+| `packaging/venus-os/{{ project_slug }}/Makefile` | Native Venus OS installation guidance |
 
 ## Configuration
 
