@@ -8,27 +8,23 @@ Device Type: {{ device_type }}
 Version: {{ cookiecutter.version | default("0.1.0") }}
 """
 
+from .config import Config, load_config
 from .models import (
     BatteryData,
-    PVInverterData,
+    Command,
+    DBusPathValue,
+    DeviceType,
     GridMeterData,
+    MQTTMessage,
+    PVInverterData,
+    Response,
+    ServiceStatus,
     TankData,
     TemperatureData,
-    DeviceType,
-    MQTTMessage,
-    DBusPathValue,
-    ServiceStatus,
-    Command,
-    Response,
     get_data_model,
 )
-
-from .config import Config, load_config
-from .service import {{ class_name }}Service
-
-{% if cookiecutter.mqtt_enabled %}
-from .mqtt_bridge import MQTTBridge
-{% endif %}
+{% if cookiecutter.mqtt_enabled %}from .mqtt_bridge import MQTTBridge
+{% endif %}from .service import {{ class_name }}Service
 
 __version__ = "{{ cookiecutter.version | default("0.1.0") }}"
 __author__ = "{{ author_name }}"
@@ -50,7 +46,7 @@ __all__ = [
     "Command",
     "Response",
     "get_data_model",
-    {% if cookiecutter.mqtt_enabled %}
+{% if cookiecutter.mqtt_enabled %}
     "MQTTBridge",
-    {% endif %}
+{% endif %}
 ]

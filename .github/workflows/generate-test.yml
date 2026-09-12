@@ -28,8 +28,9 @@ jobs:
 
       - name: Lint render script
         run: |
-          pip install --only-binary :all: ruff==0.5.0
+          pip install --only-binary :all: ruff==0.5.0 jinja2
           ruff check --extend-exclude=.github/workflows/ scripts/
+          python -m unittest discover -s scripts -p "test_*.py" -v
 
   generate:
     name: Generate project
@@ -65,6 +66,7 @@ jobs:
           name: generated-project
           path: generated_project
           retention-days: 1
+          include-hidden-files: true
 
   test-generated:
     name: Test generated project
@@ -84,13 +86,14 @@ jobs:
           python-version: "3.11"
 
       - name: Download generated project
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087e40e8b5a5461e7c
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: generated-project
+          path: generated_project
 
       - name: Install generated project
         run: |
-          pip install generated_project
+          pip install ./generated_project
           pip install --only-binary :all: \
             "paho-mqtt>=2.0" "pydantic>=2.7" "pydantic-settings>=2.3" \
             "pyyaml>=6.0" "click>=8.1" "jinja2>=3.1" \
@@ -103,7 +106,7 @@ jobs:
 
       - name: Pytest
         run: |
-          pytest generated_project/tests/ -v --cov=src/my_d_bus_service --cov-report=xml --cov-report=term-missing
+          pytest generated_project/tests/ -v --cov=my_d_bus_service --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage
         uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238

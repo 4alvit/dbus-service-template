@@ -6,6 +6,19 @@ Generated from [dbus-service-template](https://github.com/4alvit/dbus-service-te
 
 ---
 
+## Generate a project
+
+From a checkout of this template, run `python scripts/render_template.py output-dir`
+with Jinja2 installed. Pass an answers YAML file as the second argument to override
+the default project settings. Rendering preserves GitHub Actions expressions and
+fails visibly if a template references an unknown variable.
+
+Generated services honor `DEVICE_*` settings, including `DEVICE_CUSTOM_NAME`,
+`DEVICE_PRODUCT_NAME`, and `DEVICE_SERIAL_NUMBER`, when constructed directly or
+loaded from YAML. The MQTT bridge uses the service instance for its client ID and
+instance-specific topic mappings. MQTT uses protocol 3.1.1 and honors the configured
+`clean_session` setting; client construction does not require a broker connection.
+
 ## Example Generated Output
 
 When you generate a project with `copier copy gh:4alvit/dbus-service-template my-battery-monitor` and provide:

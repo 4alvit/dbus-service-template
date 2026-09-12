@@ -40,7 +40,7 @@ log_level: "DEBUG"
         config_file = tmp_path / "test_config.yaml"
         config_file.write_text(yaml_content)
 
-        config = Config(**config_file)
+        config = load_config(config_file)
 
         assert config.mqtt.broker == "192.168.1.100"
         assert config.mqtt.topic_prefix == "test_device"
@@ -295,6 +295,11 @@ def mock_mqtt():
 class TestMQTTBridge:
     """Test MQTT bridge."""
 
+    @pytest.fixture
+    def config(self):
+        """Provide the default service configuration to bridge tests."""
+        return Config()
+
     def test_bridge_init(self, config, mock_mqtt):
         """Test bridge initialization."""
         service = {{ class_name }}Service(config=config)
@@ -364,7 +369,8 @@ class TestGetDataModel:
     def test_unknown_model(self):
         from {{ module_name }}.models import get_data_model
         model = get_data_model("unknown")
-        assert model == dict
+        from typing import get_origin
+        assert get_origin(model) is dict
 
 
 if __name__ == "__main__":

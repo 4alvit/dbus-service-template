@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Data Models - {{ class_name }}Service
 ==================================================
@@ -10,13 +9,13 @@ Pydantic models for configuration, MQTT messages, and D-Bus data.
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from enum import StrEnum
+from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
-class DeviceType(str, Enum):
+class DeviceType(StrEnum):
     """Victron device types for D-Bus paths."""
 
     BATTERY = "battery"
@@ -31,7 +30,7 @@ class MQTTMessage(BaseModel):
     """MQTT message model."""
 
     topic: str
-    payload: Union[str, int, float, bool, Dict, List]
+    payload: str | int | float | bool | dict | list
     qos: int = 1
     retain: bool = False
     timestamp: datetime = Field(default_factory=datetime.utcnow)
@@ -45,69 +44,69 @@ class DBusPathValue(BaseModel):
     writeable: bool = False
     description: str = ""
     unit: str = ""
-    min_value: Optional[float] = None
-    max_value: Optional[float] = None
+    min_value: float | None = None
+    max_value: float | None = None
 
 
 class BatteryData(BaseModel):
     """Battery telemetry data model."""
 
-    voltage: Optional[float] = None
-    current: Optional[float] = None
-    power: Optional[float] = None
-    soc: Optional[float] = None
-    capacity: Optional[float] = None
-    temperature: Optional[float] = None
-    cell_voltages: List[float] = Field(default_factory=list)
-    cell_min_v: Optional[float] = None
-    cell_max_v: Optional[float] = None
-    cell_avg_v: Optional[float] = None
-    imbalance: Optional[float] = None
-    cycles: Optional[int] = None
-    time_to_go: Optional[int] = None
-    alarm: Optional[str] = None
-    bms_error: Optional[int] = None
+    voltage: float | None = None
+    current: float | None = None
+    power: float | None = None
+    soc: float | None = None
+    capacity: float | None = None
+    temperature: float | None = None
+    cell_voltages: list[float] = Field(default_factory=list)
+    cell_min_v: float | None = None
+    cell_max_v: float | None = None
+    cell_avg_v: float | None = None
+    imbalance: float | None = None
+    cycles: int | None = None
+    time_to_go: int | None = None
+    alarm: str | None = None
+    bms_error: int | None = None
 
 
 class PVInverterData(BaseModel):
     """PV Inverter telemetry data model."""
 
-    ac_power: Optional[float] = None
-    ac_voltage: Optional[float] = None
-    ac_current: Optional[float] = None
-    ac_frequency: Optional[float] = None
-    energy_forward: Optional[float] = None
-    dc_voltage: Optional[float] = None
-    dc_current: Optional[float] = None
-    dc_power: Optional[float] = None
-    status: Optional[int] = None
+    ac_power: float | None = None
+    ac_voltage: float | None = None
+    ac_current: float | None = None
+    ac_frequency: float | None = None
+    energy_forward: float | None = None
+    dc_voltage: float | None = None
+    dc_current: float | None = None
+    dc_power: float | None = None
+    status: int | None = None
 
 
 class GridMeterData(BaseModel):
     """Grid meter telemetry data model."""
 
-    power: Optional[float] = None
-    voltage: Optional[float] = None
-    current: Optional[float] = None
-    energy_forward: Optional[float] = None
-    energy_reverse: Optional[float] = None
-    frequency: Optional[float] = None
-    power_factor: Optional[float] = None
+    power: float | None = None
+    voltage: float | None = None
+    current: float | None = None
+    energy_forward: float | None = None
+    energy_reverse: float | None = None
+    frequency: float | None = None
+    power_factor: float | None = None
 
 
 class TankData(BaseModel):
     """Tank telemetry data model."""
 
-    level: Optional[float] = None
+    level: float | None = None
     fluid_type: int = 1
-    capacity: Optional[float] = None
-    remaining: Optional[float] = None
+    capacity: float | None = None
+    remaining: float | None = None
 
 
 class TemperatureData(BaseModel):
     """Temperature sensor data model."""
 
-    temperature: Optional[float] = None
+    temperature: float | None = None
     unit: str = "celsius"
     sensor_type: str = "external"
 
@@ -119,18 +118,18 @@ DEVICE_DATA_MODELS = {
     DeviceType.GRID_METER: GridMeterData,
     DeviceType.TANK: TankData,
     DeviceType.TEMPERATURE: TemperatureData,
-    DeviceType.GENERIC: Dict[str, Any],
+    DeviceType.GENERIC: dict[str, Any],
 }
 
 
-def get_data_model(device_type: Union[str, DeviceType]) -> type:
+def get_data_model(device_type: str | DeviceType) -> type:
     """Get the appropriate data model for device type."""
     if isinstance(device_type, str):
         try:
             device_type = DeviceType(device_type.lower())
         except ValueError:
             device_type = DeviceType.GENERIC
-    return DEVICE_DATA_MODELS.get(device_type, Dict[str, Any])
+    return DEVICE_DATA_MODELS.get(device_type, dict[str, Any])
 
 
 class ServiceStatus(BaseModel):
@@ -139,7 +138,7 @@ class ServiceStatus(BaseModel):
     connected: bool = False
     mqtt_connected: bool = False
     dbus_registered: bool = False
-    last_update: Optional[datetime] = None
+    last_update: datetime | None = None
     error_count: int = 0
     uptime_seconds: float = 0.0
 
@@ -148,14 +147,14 @@ class Command(BaseModel):
     """Command model for D-Bus method calls."""
 
     command: str
-    parameters: Dict[str, Any] = Field(default_factory=dict)
-    request_id: Optional[str] = None
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    request_id: str | None = None
 
 
 class Response(BaseModel):
     """Response model for D-Bus method calls."""
 
     success: bool
-    result: Optional[Any] = None
-    error: Optional[str] = None
-    request_id: Optional[str] = None
+    result: Any | None = None
+    error: str | None = None
+    request_id: str | None = None
