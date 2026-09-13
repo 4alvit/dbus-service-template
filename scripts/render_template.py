@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from jinja2 import Environment, FileSystemLoader, StrictUndefined
+from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
 TEMPLATE_ROOT = Path(__file__).resolve().parent.parent
 
@@ -57,6 +57,20 @@ SKIP_NAMES = {
 # Files that exist as templates for copier's own use; we re-render them
 # directly and strip the suffix. Anything not in this set is copied as-is.
 TEMPLATE_SUFFIXES = {".j2"}
+
+
+def render_environment() -> Environment:
+    """Escape HTML/XML while preserving Python, YAML and shell source text."""
+    return Environment(
+        loader=FileSystemLoader(str(TEMPLATE_ROOT)),
+        undefined=StrictUndefined,
+        keep_trailing_newline=True,
+        autoescape=select_autoescape(
+            enabled_extensions=("html", "htm", "xml"),
+            default_for_string=False,
+            default=False,
+        ),
+    )
 
 
 def load_ctx(answers: Path | None) -> dict[str, Any]:
@@ -108,6 +122,11 @@ def _render_template(src_path: Path, env: Environment, ctx: dict[str, Any]) -> s
         flags=re.DOTALL,
     )
     # StrictUndefined must fail instead of silently shipping an unrendered file.
+    # from_string has no filename, so apply the policy to the rendered filename.
+    # This also enables escaping for future .html.j2 or .xml.j2 templates.
+    if callable(env.autoescape):
+        output_name = src_path.name.removesuffix(".j2")
+        env = env.overlay(autoescape=env.autoescape(output_name))
     return env.from_string(source).render(**ctx)
 
 
@@ -152,11 +171,7 @@ def main() -> int:
     out_dir.mkdir(parents=True)
 
     ctx = load_ctx(answers)
-    env = Environment(
-        loader=FileSystemLoader(str(TEMPLATE_ROOT)),
-        undefined=StrictUndefined,
-        keep_trailing_newline=True,
-    )
+    env = render_environment()
     written = render_tree(TEMPLATE_ROOT, out_dir, env, ctx)
     py_files = [str(p.relative_to(out_dir)) for p in written if p.suffix == ".py"]
     print(json.dumps({"out_dir": str(out_dir), "python_files": py_files}, indent=2))
