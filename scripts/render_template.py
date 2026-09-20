@@ -41,7 +41,7 @@ DEFAULT_CTX: dict[str, Any] = {
     "author_name": "4alvit",
     "author_email": "noreply@4alvit.dev",
     "license_type": "MIT",
-    "python_version": "3.11",
+    "python_version": "3.12",
     "include_ha_discovery": False,
     "include_dvcc": False,
     "include_gui": False,

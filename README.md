@@ -6,7 +6,16 @@ Generated from [dbus-service-template](https://github.com/4alvit/dbus-service-te
 
 ---
 
-<!-- ci-release-process:start -->
+## Python runtime
+
+Native Venus OS packages target **Python 3.12.x**. The audited Cerbo on Venus OS
+v3.75 reports Python **3.12.13**; the [official Venus OS v3.79 manifest](https://updates.victronenergy.com/feeds/venus/release/sdk/venus-scarthgap-x86_64-arm-cortexa8hf-neon-toolchain-v3.79.target.manifest)
+also ships 3.12.13. Local development and CI use `.python-version` / Python
+3.12.13. Package metadata accepts 3.12 patch updates and rejects other minor
+versions until they have been validated. Use the firmware's system interpreter
+and its matching D-Bus/GI libraries on the device; do not replace the OS Python.
+
+
 ## CI and deployment
 
 See [CI and deployment workflow](docs/release-workflow.md) for required checks and local commands. This repository uses validation-only policy; application release channels do not apply.

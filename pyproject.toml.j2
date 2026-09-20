@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "{{ project_description }}"
 readme = "README.md"
 license = {text = "{{ license_type }}"}
-requires-python = ">=3.11"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "paho-mqtt>=2.0",
     "pydantic>=2.7",
@@ -58,7 +58,7 @@ python_functions = "test_*"
 addopts = "-v --strict-markers --tb=short --cov={{ module_name }} --cov-report=term-missing"
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py312"
 line-length = 100
 select = ["E", "F", "I", "W", "UP", "B", "C4", "SIM", "T20"]
 ignore = ["S101", "B008", "T201", "T203"]
@@ -69,7 +69,7 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 warn_return_any = true
 warn_unused_ignores = true
 disallow_untyped_defs = true

@@ -110,12 +110,10 @@ license_type:
 
 python_version:
   type: str
-  help: Minimum Python version (Venus OS uses 3.11+)
-  default: "3.11"
+  help: Target Python minor version supplied by Venus OS
+  default: "3.12"
   choices:
-    - "3.11"
     - "3.12"
-    - "3.13"
 
 include_ha_discovery:
   type: bool
