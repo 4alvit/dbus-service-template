@@ -19,6 +19,7 @@ Callable validation workflows:
 - `.github/workflows/generate-test.yml`
 - `.github/workflows/release-security.yml`
 - `.github/workflows/codeql.yml`
+- `.github/workflows/dependency-review.yml`
 
 ## Nightly validation and deployment
 
