@@ -1,3 +1,4 @@
+# Regenerate with uv pip compile --universal --generate-hashes --python-version 3.12.
 paho-mqtt>=2.0
 pydantic>=2.7
 pydantic-settings>=2.3
