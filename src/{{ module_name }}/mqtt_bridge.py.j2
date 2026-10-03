@@ -359,7 +359,7 @@ class MQTTBridge:
 
         try:
             # Serialize payload
-            payload_str = json.dumps(payload) if isinstance(payload, (dict, list)) else str(payload)
+            payload_str = json.dumps(payload) if isinstance(payload, dict | list) else str(payload)
 
             result = self._client.publish(
                 topic,
