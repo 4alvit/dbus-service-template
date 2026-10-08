@@ -169,7 +169,12 @@ def render_tree(
         raise ValueError("Output must be a new directory; existing files are never removed")
     plans = []
     for src_path in paths:
-        if src_path.is_symlink() or not src_path.is_file():
+        current = src
+        for component in src_path.relative_to(src).parts:
+            current /= component
+            if current.is_symlink():
+                raise ValueError("Template source cannot contain symlinked ancestors")
+        if not src_path.is_file():
             raise ValueError("Template source must contain only regular files")
         rel = _render_path(src_path.relative_to(src), env, ctx)
         if src_path.suffix in TEMPLATE_SUFFIXES:

@@ -36,4 +36,4 @@ Follow `RELEASING.md` and `.release-policy.json`; this template currently uses v
 - [`docs/tutorial.md.j2`](docs/tutorial.md.j2)
 - [`RELEASING.md`](RELEASING.md)
 
-See the [OpenSSF evidence index](docs/openssf-evidence.md) for the current assessment scope and outstanding verification.
+See the [OpenSSF evidence index](https://github.com/4alvit/dbus-service-template/blob/main/docs/openssf-evidence.md) for the current assessment scope and outstanding verification.

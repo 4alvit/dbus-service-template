@@ -150,6 +150,26 @@ class RenderTemplateTests(unittest.TestCase):
             render_tree(source, output, render_environment(), DEFAULT_CTX)
             self.assertEqual({path.name for path in output.iterdir()}, {"tracked.py"})
 
+    def test_tracked_file_under_symlinked_parent_is_rejected(self):
+        with TemporaryDirectory() as directory:
+            source, output = Path(directory) / "source", Path(directory) / "output"
+            source.mkdir()
+            nested = source / "nested"
+            nested.mkdir()
+            tracked = nested / "file.txt"
+            tracked.write_text("tracked source")
+            subprocess.run(["git", "init", "--quiet", str(source)], check=True)
+            subprocess.run(["git", "-C", str(source), "add", "nested/file.txt"], check=True)
+            tracked.unlink()
+            nested.rmdir()
+            private = Path(directory) / "private"
+            private.mkdir()
+            (private / "file.txt").write_text("synthetic private data")
+            nested.symlink_to(private, target_is_directory=True)
+            with self.assertRaises(ValueError):
+                render_tree(source, output, render_environment(), DEFAULT_CTX)
+            self.assertFalse(output.exists())
+
     def test_source_archive_excludes_local_environment_and_badge(self):
         with TemporaryDirectory() as directory:
             source, output = Path(directory) / "source", Path(directory) / "output"
