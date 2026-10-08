@@ -289,3 +289,16 @@ mypy src/{{ module_name }}
 
 - [System Architecture](./.github/docs/system-architecture.md) - Data flow diagrams, runbook
 - [ADR](.github/docs/adr-001.md) - Architecture Decision Records
+
+## Contributing and security
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development, bug reports and proposals,
+[SECURITY.md](SECURITY.md) for confidential vulnerability reports and deployment
+boundaries, and the [OpenSSF evidence index](https://github.com/4alvit/dbus-service-template/blob/main/docs/openssf-evidence.md) for assessment
+scope and verification.
+
+The renderer requires a **new output directory** and never removes an existing one.
+In a Git checkout it reads only tracked files; add new template files to Git before
+previewing them. Source symlinks and path traversal in answers are rejected. Local
+environments, credential files and this template’s badge assessment are not project
+inputs. Review generated source and configure access controls before deployment.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install once with --install, then run the same lint/type/test commands used by CI.
+# Install once with --install, then run the same lint/test commands used by CI.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 python_bin="${CI_PYTHON:-$PWD/.venv-ci/bin/python}"

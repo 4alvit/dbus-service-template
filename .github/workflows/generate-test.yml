@@ -105,7 +105,7 @@ jobs:
           pytest generated_project/tests/ -v --cov=my_d_bus_service --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage
-        uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
         if: always()
         with:
           files: ./coverage.xml
