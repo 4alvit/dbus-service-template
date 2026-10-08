@@ -13,8 +13,10 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -51,7 +53,8 @@ DEFAULT_CTX: dict[str, Any] = {
 # Skip the source-of-truth template files (this script + its data) and the
 # copier config so the generated project is a self-contained output.
 SKIP_NAMES = {
-    "copier.yml", ".copier-answers.yml.example", "render_template.py", "test_render_template.py"
+    "copier.yml", ".copier-answers.yml.example", "render_template.py", "test_render_template.py",
+    ".bestpractices.json", "openssf-evidence.md", ".coverage",
 }
 
 # Files that exist as templates for copier's own use; we re-render them
@@ -110,6 +113,12 @@ def _render_path(rel: Path, env: Environment, ctx: dict[str, Any]) -> Path:
             parts.append(str(_eval_expr(segment, env, ctx)))
         else:
             parts.append(segment)
+    if any(
+        not part or part in {".", ".."} or "/" in part or "\\" in part
+        or any(ord(char) < 32 for char in part)
+        for part in parts
+    ):
+        raise ValueError("Template answers must not create unsafe output paths")
     return Path(*parts)
 
 
@@ -130,28 +139,50 @@ def _render_template(src_path: Path, env: Environment, ctx: dict[str, Any]) -> s
     return env.from_string(source).render(**ctx)
 
 
+def source_files(src: Path) -> list[Path]:
+    """Use tracked source in a checkout; exclude local state in source archives."""
+    if (src / ".git").exists():
+        result = subprocess.check_output(
+            ["git", "-C", str(src), "ls-files", "--cached", "-z"]
+        )
+        paths = [src / name for name in result.decode().split("\0") if name]
+    else:
+        paths = []
+        excluded = {".git", ".venv", ".venv-ci", "venv", "__pycache__",
+                    ".pytest_cache", ".ruff_cache", ".mypy_cache", "logs",
+                    "dist", "build", "release-dist", "private"}
+        for root, dirs, files in os.walk(src, followlinks=False):
+            dirs[:] = [name for name in dirs if name not in excluded
+                       and not (Path(root) / name).is_symlink()]
+            paths.extend(Path(root) / name for name in files)
+    return sorted(path for path in paths if path.name not in SKIP_NAMES
+                  and path.name not in {".env", "secrets.yaml", "secrets.yml"}
+                  and not path.name.endswith((".pyc", ".pyo")))
+
+
 def render_tree(
     src: Path, dst: Path, env: Environment, ctx: dict[str, Any]
 ) -> list[Path]:
-    """Copy ``src`` tree to ``dst`` rendering every template file."""
+    """Render to a new directory without reading symlinks or local checkout state."""
+    paths = source_files(src)
+    if dst.exists() or dst.is_symlink():
+        raise ValueError("Output must be a new directory; existing files are never removed")
+    plans = []
+    for src_path in paths:
+        if src_path.is_symlink() or not src_path.is_file():
+            raise ValueError("Template source must contain only regular files")
+        rel = _render_path(src_path.relative_to(src), env, ctx)
+        if src_path.suffix in TEMPLATE_SUFFIXES:
+            rel = rel.with_name(rel.stem)
+        if rel.is_absolute() or not (dst / rel).resolve().is_relative_to(dst.resolve()):
+            raise ValueError("Template output path escapes the destination")
+        plans.append((src_path, dst / rel))
+    dst.mkdir(parents=True, exist_ok=False)
     written: list[Path] = []
-    for src_path in sorted(src.rglob("*")):
-        rel = src_path.relative_to(src)
-        if rel.parts and rel.parts[0] in {".git", "logs"}:
-            continue
-        if src_path.name in SKIP_NAMES:
-            continue
-        rel = _render_path(rel, env, ctx)
-        dst_path = dst / rel
-        if src_path.is_dir():
-            dst_path.mkdir(parents=True, exist_ok=True)
-            continue
+    for src_path, dst_path in plans:
         dst_path.parent.mkdir(parents=True, exist_ok=True)
         if src_path.suffix in TEMPLATE_SUFFIXES:
-            dst_file = dst_path.with_name(src_path.stem)  # drop the trailing .j2
-            rendered = _render_template(src_path, env, ctx)
-            dst_file.write_text(rendered)
-            dst_path = dst_file
+            dst_path.write_text(_render_template(src_path, env, ctx))
         else:
             shutil.copyfile(src_path, dst_path)
         shutil.copymode(src_path, dst_path)
@@ -164,11 +195,8 @@ def main() -> int:
     if len(sys.argv) < 2:
         print("usage: render_template.py <out_dir> [answers_yaml]", file=sys.stderr)
         return 2
-    out_dir = Path(sys.argv[1]).resolve()
+    out_dir = Path(sys.argv[1]).absolute()
     answers = Path(sys.argv[2]) if len(sys.argv) > 2 else None
-    if out_dir.exists():
-        shutil.rmtree(out_dir)
-    out_dir.mkdir(parents=True)
 
     ctx = load_ctx(answers)
     env = render_environment()
