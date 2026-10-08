@@ -1,5 +1,10 @@
 # {{ project_name }}
 
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15298/badge)](https://www.bestpractices.dev/projects/15298)
+
+This badge tracks the assessment of the **dbus-service-template repository**.
+Generated services need their own assessment; they do not inherit this status.
+
 {{ project_description }}
 
 Generated from [dbus-service-template](https://github.com/4alvit/dbus-service-template) using [Copier](https://copier.readthedocs.io/).
