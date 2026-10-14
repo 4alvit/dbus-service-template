@@ -6,6 +6,7 @@ and Bandit requirements as CI:
 ```sh
 bash scripts/ci.sh --install
 bash scripts/ci.sh
+.venv-ci/bin/python -m unittest discover -s .github/security-tests -p test_bandit_discovery.py
 .venv-ci/bin/python scripts/workflow_contracts.py
 .venv-ci/bin/python -m unittest discover -s .github/workflow-tests -p 'test_*.py'
 .venv-ci/bin/python -m unittest discover -s .github/release-tests -p 'test_*.py'

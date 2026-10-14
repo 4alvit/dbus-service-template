@@ -19,6 +19,7 @@ if [[ "${1:-}" == security ]]; then
   exit 0
 fi
 "$python_bin" -m ruff check scripts/
+"$python_bin" -m unittest discover -s .github/security-tests -p 'test_bandit_discovery.py'
 "$python_bin" -m unittest discover -s scripts -p 'test_*.py' -v
 generated="$(mktemp -d)"
 trap 'rm -rf "$generated"' EXIT

@@ -30,7 +30,7 @@ class BanditDiscoveryTests(unittest.TestCase):
         commands = []
         for relative in ("scripts/ci.sh", ".github/workflows/release-security.yml"):
             text = (ROOT / relative).read_text().replace("\\\n", " ")
-            commands.extend(line for line in text.splitlines() if "bandit -r " in line)
+            commands.extend(line for line in text.splitlines() if "bandit -r . " in line)
         self.assertEqual(len(commands), 2)
         values = []
         for command in commands:
@@ -90,3 +90,27 @@ class BanditDiscoveryTests(unittest.TestCase):
 
     def test_git_worktree(self) -> None:
         self.check_discovery(worktree=True)
+
+    def test_generated_scans_detect_medium_severity_code(self) -> None:
+        """Both configured generated-source scans must actually find a flaw."""
+        for relative in ("scripts/ci.sh", ".github/workflows/generate-test.yml"):
+            commands = []
+            for line in (ROOT / relative).read_text().splitlines():
+                if "bandit -r " in line and "bandit -r . " not in line:
+                    arguments = shlex.split(line)
+                    commands.append(arguments[arguments.index("bandit") + 1:])
+            self.assertEqual(len(commands), 1, relative)
+            with self.subTest(configuration=relative), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                # Scanner input only; this synthetic code is never imported or run.
+                (root / "probe.py").write_text("def unsafe(text):\n    return eval(text)\n")
+                arguments = commands[0]
+                arguments[arguments.index("-r") + 1] = str(root)
+                result = subprocess.run(
+                    [sys.executable, "-m", "bandit", *arguments, "-f", "json"],
+                    capture_output=True, text=True, check=False,
+                )
+                self.assertEqual(result.returncode, 1, result.stderr)
+                report = json.loads(result.stdout)
+                self.assertEqual(report["errors"], [])
+                self.assertTrue(any(item["test_id"] == "B307" for item in report["results"]))

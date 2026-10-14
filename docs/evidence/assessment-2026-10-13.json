@@ -40,7 +40,8 @@
     "source_archive_acceptance": {
       "result": "passed",
       "scope": "Exact archive membership/bytes; fresh isolated environment; rendered package version 9.8.7 installed; 18 extracted renderer tests and 51 generated-service tests. Local source build only, no release publication."
-    }
+    },
+    "bandit_discovery_tests_passed": 3
   },
   "github_audit": {
     "ordinary_issues": 0,
@@ -84,6 +85,8 @@
     "src/{{ module_name }}/mqtt_bridge.py.j2": "aa0cb43d8fe2de2cd3e71a1ddb6b7df42eed1b164a525e75444835c0be47bbdf",
     "scripts/test_render_template.py": "6b2c8e0aae96229b7e5eea575af175c3e3a43d1cfc04f27f7c100f15488f5d00",
     "tests/test_mqtt_bridge.py.j2": "34682610b397ece70da579c904ebbdb3a7d968440d264b7b5aa95c243e5c6751",
-    ".github/workflows/generate-test.yml": "a07a13e3bb733ee598235543365f5ebba34dcb02d154e69c41f8728260e8a095"
+    ".github/workflows/generate-test.yml": "a07a13e3bb733ee598235543365f5ebba34dcb02d154e69c41f8728260e8a095",
+    ".github/security-tests/test_bandit_discovery.py": "49ac6f89a28c3cfef861cec216f15f902d27a1c882c4a9b155d8008669c2d2fe",
+    "scripts/ci.sh": "ac91c40827f60a40f13e8c8c68183e0864bdec8632730203a1d0ab3ec23ffda4"
   }
 }
