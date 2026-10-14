@@ -12,6 +12,7 @@
 - Validate typed source answers before writing output; reject code/shell delimiters and unsupported license choices.
 - Require TLS for broker credentials, constrain TLS ciphers and reject oversized or non-UTF-8 MQTT messages.
 - Security-scan rendered Python in CI as well as repository tooling.
+- Reject malformed answer lines and keep invalid MQTT payloads from affecting bounded reconnect backoff.
 
 ### Upgrade
 

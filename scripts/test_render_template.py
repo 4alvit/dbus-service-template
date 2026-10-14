@@ -59,6 +59,11 @@ class RenderTemplateTests(unittest.TestCase):
                         render_tree(source, output, render_environment(), {**DEFAULT_CTX, key: value})
                     self.assertFalse(output.exists())
 
+    def test_malformed_answers_do_not_silently_use_defaults(self):
+        with self.assertRaisesRegex(ValueError, "key: value"):
+            context_from_text("# disabled by operator\nmqtt_enabled false\n")
+        self.assertFalse(context_from_text("\n# comment\nmqtt_enabled: false\n")["mqtt_enabled"])
+
     def test_repository_identity_does_not_leak_into_generated_readme(self):
         root = Path(__file__).resolve().parents[1]
         with TemporaryDirectory() as directory:

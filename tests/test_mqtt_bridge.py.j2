@@ -74,7 +74,7 @@ class TestMQTTBridge:
         assert bridge.config.topic_prefix == "test"
         assert bridge._connected is True
 
-    @pytest.mark.parametrize("payload", [b"\xff", b"x" * 65537])
+    @pytest.mark.parametrize("payload", [b"\xff", b"x" * 65537], ids=["invalid-utf8", "oversized"])
     def test_invalid_wire_payload_does_not_mutate_dbus(self, bridge, payload):
         message = Mock(topic="test/voltage", payload=payload)
         bridge._on_message(None, None, message)
@@ -110,6 +110,35 @@ class TestMQTTBridge:
         with pytest.raises(ValueError, match="supplied together"):
             MQTTConfig(use_tls=True, client_cert="synthetic.pem")
 
+    @pytest.mark.parametrize("credentials", [
+        {"password": "synthetic-test"},
+        {"client_cert": "synthetic.pem", "client_key": "synthetic.key"},
+    ])
+    def test_mutated_credentials_rejected_before_client_creation(self, mock_dbus_service, credentials):
+        config = MQTTConfig()
+        bridge = MQTTBridge(config, mock_dbus_service)
+        for name, value in credentials.items():
+            setattr(config, name, value)
+        with patch("paho.mqtt.client.Client") as client:
+            with pytest.raises(ValueError, match="require use_tls"):
+                bridge._create_client()
+            client.assert_not_called()
+
+    def test_reconnect_ignores_payload_errors_and_caps_attempts(self, bridge):
+        bridge._running = True
+        bridge._errors = 10 ** 6
+        with patch("threading.Thread") as thread, patch("time.sleep") as sleep:
+            for _ in range(12):
+                bridge._schedule_reconnect()
+                thread.call_args.kwargs["target"]()
+            delays = [call.args[0] for call in sleep.call_args_list]
+            assert delays[0] == bridge.config.reconnect_delay
+            assert max(delays) == 300
+            bridge._on_connect(bridge._client, None, {}, 0)
+            bridge._schedule_reconnect()
+            thread.call_args.kwargs["target"]()
+            assert sleep.call_args.args[0] == bridge.config.reconnect_delay
+
     @pytest.mark.parametrize("key_bits,accepted", [(2048, False), (3072, True)])
     def test_real_tls_handshake_enforces_certificate_strength(self, mock_dbus_service, tmp_path, key_bits, accepted):
         """Use ephemeral synthetic certificates and a loopback TLS peer, no MQTT traffic."""
@@ -127,7 +156,7 @@ class TestMQTTBridge:
             openssl, "req", "-x509", "-newkey", f"rsa:{key_bits}", "-nodes",
             "-keyout", str(key), "-out", str(cert), "-days", "1",
             "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost",
-        ], check=True, capture_output=True)
+        ], check=True, capture_output=True, timeout=30)
         server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         server_context.minimum_version = ssl.TLSVersion.TLSv1_2
         server_context.load_cert_chain(cert, key)
@@ -154,7 +183,7 @@ class TestMQTTBridge:
                     with bridge._client._ssl_context.wrap_socket(raw, server_hostname="localhost"):
                         pass
                 else:
-                    with pytest.raises(ssl.SSLCertVerificationError, match="key too weak"):
+                    with pytest.raises(ssl.SSLCertVerificationError, match="(?i)key too (weak|small)"):
                         bridge._client._ssl_context.wrap_socket(raw, server_hostname="localhost")
             assert future.result(timeout=5) is accepted
 

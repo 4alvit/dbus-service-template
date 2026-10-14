@@ -90,8 +90,10 @@ def context_from_text(text: str) -> dict[str, Any]:
     if text:
         for line in text.splitlines():
             line = line.strip()
-            if not line or line.startswith("#") or ":" not in line:
+            if not line or line.startswith("#"):
                 continue
+            if ":" not in line:
+                raise ValueError("Template answers must use key: value syntax")
             key, _, val = line.partition(":")
             val = val.strip().strip('"').strip("'")
             key = key.strip()
