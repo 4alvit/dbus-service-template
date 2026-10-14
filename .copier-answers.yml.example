@@ -1,11 +1,11 @@
-# Example Copier answers - copy to .copier-answers.yml for non-interactive updates
-# Generated with: copier copy gh:4alvit/dbus-service-template my-project --defaults
+# Scalar answers for: python scripts/render_template.py my-project answers.yml
+# Set each identifier explicitly; derived names are not automatically recomputed.
 
 project_name: "My Battery Monitor"
 project_description: "JBD BMS to Venus OS D-Bus bridge"
 project_slug: "my-battery-monitor"
 module_name: "my_battery_monitor"
-class_name: "MyBatteryMonitorService"
+class_name: "MyBatteryMonitor"
 device_type: "battery"
 service_instance: 0
 service_name: "com.victronenergy.battery"

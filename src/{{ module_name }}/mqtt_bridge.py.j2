@@ -59,6 +59,7 @@ class MQTTBridge:
         self._msg_received = 0
         self._msg_sent = 0
         self._errors = 0
+        self._reconnect_attempts = 0
 
         self._setup_topic_mappings()
 
@@ -148,6 +149,7 @@ class MQTTBridge:
 
     def _create_client(self) -> None:
         """Create and configure MQTT client."""
+        self.config.validate_transport_credentials()
         client_id = f"{self.config.client_id}_{self.db.instance}"
 
         self._client = mqtt.Client(
@@ -166,6 +168,8 @@ class MQTTBridge:
         # TLS/SSL
         if self.config.use_tls:
             context = ssl.create_default_context()
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            context.set_ciphers("ECDHE+AESGCM:ECDHE+CHACHA20:DHE+AESGCM:@SECLEVEL=3")
             if self.config.ca_cert:
                 context.load_verify_locations(self.config.ca_cert)
             if self.config.client_cert and self.config.client_key:
@@ -193,6 +197,7 @@ class MQTTBridge:
         """MQTT on_connect callback."""
         if rc == 0:
             self._connected = True
+            self._reconnect_attempts = 0
             logger.info(f"MQTT connected (result code: {rc})")
 
             # Subscribe to all mapped topics
@@ -238,7 +243,16 @@ class MQTTBridge:
         """MQTT on_message callback."""
         self._msg_received += 1
         topic = msg.topic
-        payload = msg.payload.decode("utf-8").strip()
+        if len(msg.payload) > 65536:
+            self._errors += 1
+            logger.warning("Discarding MQTT payload larger than 64 KiB")
+            return
+        try:
+            payload = msg.payload.decode("utf-8").strip()
+        except UnicodeDecodeError:
+            self._errors += 1
+            logger.warning("Discarding non-UTF-8 MQTT payload")
+            return
 
         logger.debug(f"MQTT received: {topic} = {payload}")
 
@@ -335,7 +349,9 @@ class MQTTBridge:
         if not self._running:
             return
 
-        delay = min(self.config.reconnect_delay * (2 ** self._errors), 300)
+        exponent = min(self._reconnect_attempts, 10)
+        delay = min(self.config.reconnect_delay * (2 ** exponent), 300)
+        self._reconnect_attempts = min(self._reconnect_attempts + 1, 10)
         logger.info(f"Scheduling MQTT reconnect in {delay}s")
 
         def _reconnect():

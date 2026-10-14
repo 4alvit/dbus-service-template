@@ -1,5 +1,6 @@
 # Copier template configuration for dbus-service-template
-# Generates production-ready D-Bus services for Venus OS
+# Describes the answers consumed by scripts/render_template.py.
+# Generated D-Bus services require their own deployment and hardware acceptance.
 
 _suffix: .j2
 suffix: .j2
@@ -106,7 +107,6 @@ license_type:
   default: MIT
   choices:
     - MIT
-    - Apache-2.0
 
 python_version:
   type: str

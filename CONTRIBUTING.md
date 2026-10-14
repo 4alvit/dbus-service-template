@@ -25,7 +25,7 @@ For a bug fix, add a regression test that fails before the fix and passes afterw
 
 Keep pull requests focused and explain the problem, resulting behavior, compatibility impact and exact validation performed. Update the user-facing documentation when changing configuration, interfaces or operational behavior. Call out tests not run and their prerequisites. Maintainers review changes through GitHub pull requests and required CI; automated review is supplemental. Contributions are provided under the repository's [MIT license](LICENSE); a contributor must have the right to submit the work.
 
-Follow `RELEASING.md` and `.release-policy.json`; this template currently uses validation-only policy. Describe template compatibility and generated-project migration separately in any source release.
+Follow `RELEASING.md` and `.release-policy.json`; this template publishes separately versioned source candidates with explicit qualification. Describe template compatibility and generated-project migration separately in any source release.
 
 ## Source and interfaces
 
@@ -35,5 +35,7 @@ Follow `RELEASING.md` and `.release-policy.json`; this template currently uses v
 - [`README.md`](README.md)
 - [`docs/tutorial.md.j2`](docs/tutorial.md.j2)
 - [`RELEASING.md`](RELEASING.md)
+
+Follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) and [GOVERNANCE.md](GOVERNANCE.md). Maintainer changes have the same review and test obligations as external contributions. There is no mandatory DCO sign-off policy.
 
 See the [OpenSSF evidence index](https://github.com/4alvit/dbus-service-template/blob/main/docs/openssf-evidence.md) for the current assessment scope and outstanding verification.

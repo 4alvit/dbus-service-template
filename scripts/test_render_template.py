@@ -37,6 +37,43 @@ class RenderTemplateTests(unittest.TestCase):
             self.assertIn("${{ secrets.GITHUB_TOKEN }}", rendered)
             self.assertIn("${{ steps.package.outputs.path }}", rendered)
 
+    def test_code_and_shell_answer_injection_rejected_before_writing(self):
+        cases = {
+            "project_slug": ["safe;touch injected", "safe$(id)", "safe/name"],
+            "module_name": ["class", "a-b", "safe;import os"],
+            "class_name": ["X): pass #", "Class\nimport os"],
+            "project_name": ['A\"; import os #', "A{__import__('os')}", "A\\nB"],
+            "project_description": ['triple\"\"\" quote'],
+            "mqtt_port_default": [True, "1883;import os", 65536],
+            "service_instance": [-1, 256],
+            "mqtt_enabled": ["false"],
+            "license_type": ["Apache-2.0"],
+        }
+        with TemporaryDirectory() as directory:
+            source, output = Path(directory) / "source", Path(directory) / "output"
+            source.mkdir()
+            (source / "file.py.j2").write_text("safe = True\n")
+            for key, values in cases.items():
+                for value in values:
+                    with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                        render_tree(source, output, render_environment(), {**DEFAULT_CTX, key: value})
+                    self.assertFalse(output.exists())
+
+    def test_malformed_answers_do_not_silently_use_defaults(self):
+        with self.assertRaisesRegex(ValueError, "key: value"):
+            context_from_text("# disabled by operator\nmqtt_enabled false\n")
+        self.assertFalse(context_from_text("\n# comment\nmqtt_enabled: false\n")["mqtt_enabled"])
+
+    def test_repository_identity_does_not_leak_into_generated_readme(self):
+        root = Path(__file__).resolve().parents[1]
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "project"
+            render_tree(root, output, render_environment(), context_from_text(""))
+            readme = (output / "README.md").read_text()
+            self.assertIn("# My D-Bus Service", readme)
+            self.assertNotIn("15298", readme)
+            self.assertNotIn("OpenSSF Best Practices]", readme)
+
     def test_unknown_template_variable_fails(self):
         """Never silently copy an invalid, unrendered template into the output."""
         with TemporaryDirectory() as directory:
@@ -126,7 +163,7 @@ class RenderTemplateTests(unittest.TestCase):
             source, output = Path(directory) / "source", Path(directory) / "output"
             source.mkdir()
             (source / "{{ module_name }}.py.j2").write_text("value = 1")
-            for value in ("../outside", "/tmp/outside", "safe/../../outside", "..\\outside"):
+            for value in ("../outside", "/tmp/outside", "safe/../../outside", "..\\outside"):  # nosec B108 - rejected path fixtures, never opened
                 with self.subTest(value=value), self.assertRaises(ValueError):
                     render_tree(source, output, render_environment(), {**DEFAULT_CTX, "module_name": value})
                 self.assertFalse(output.exists())
@@ -206,7 +243,7 @@ class RenderTemplateTests(unittest.TestCase):
     def test_inventory_rejects_ambiguous_and_escaping_paths(self):
         with TemporaryDirectory() as directory:
             source = Path(directory)
-            for files in (["../escape"], ["/tmp/escape"], ["a", "a"], [1], []):
+            for files in (["../escape"], ["/tmp/escape"], ["a", "a"], [1], []):  # nosec B108 - rejected inventory, never opened
                 with self.subTest(files=files):
                     (source / "template-files.json").write_text(json.dumps({"files": files}))
                     with self.assertRaises(ValueError):

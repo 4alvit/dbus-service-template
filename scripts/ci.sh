@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 python_bin="${CI_PYTHON:-$PWD/.venv-ci/bin/python}"
 if [[ "${1:-}" == --install ]]; then
   uv venv .venv-ci --python 3.12.13
-  uv pip install --python "$python_bin" ruff jinja2 pyyaml pytest pytest-asyncio pytest-cov pytest-mock paho-mqtt pydantic pydantic-settings click mypy bandit==1.9.2
+  uv pip install --python "$python_bin" --require-hashes --only-binary=:all: -r .github/requirements-template.txt -r .github/requirements-bandit-1.9.2.txt
   exit 0
 fi
 if [[ ! -x "$python_bin" ]]; then
@@ -19,9 +19,11 @@ if [[ "${1:-}" == security ]]; then
   exit 0
 fi
 "$python_bin" -m ruff check scripts/
+"$python_bin" -m unittest discover -s .github/security-tests -p 'test_bandit_discovery.py'
 "$python_bin" -m unittest discover -s scripts -p 'test_*.py' -v
 generated="$(mktemp -d)"
 trap 'rm -rf "$generated"' EXIT
 "$python_bin" scripts/render_template.py "$generated/project"
 "$python_bin" -m ruff check "$generated/project/src/"
+"$python_bin" -m bandit -r "$generated/project/src/" -ll
 PYTHONPATH="$generated/project/src" "$python_bin" -m pytest "$generated/project/tests/" --cov=my_d_bus_service

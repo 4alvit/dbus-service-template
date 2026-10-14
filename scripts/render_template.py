@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import keyword
 import os
 import re
 import shutil
@@ -78,7 +79,7 @@ def render_environment() -> Environment:
 
 def load_ctx(answers: Path | None) -> dict[str, Any]:
     """Build the render context, overlaying any answers YAML on the defaults."""
-    return context_from_text(answers.read_text() if answers and answers.is_file() else "")
+    return context_from_text(answers.read_text() if answers is not None else "")
 
 
 def context_from_text(text: str) -> dict[str, Any]:
@@ -89,13 +90,17 @@ def context_from_text(text: str) -> dict[str, Any]:
     if text:
         for line in text.splitlines():
             line = line.strip()
-            if not line or line.startswith("#") or ":" not in line:
+            if not line or line.startswith("#"):
                 continue
+            if ":" not in line:
+                raise ValueError("Template answers must use key: value syntax")
             key, _, val = line.partition(":")
             val = val.strip().strip('"').strip("'")
             key = key.strip()
             if key == "cookiecutter":
                 raise ValueError("cookiecutter is a reserved context alias")
+            if key not in DEFAULT_CTX:
+                raise ValueError(f"Unknown template answer: {key}")
             if val.lower() in ("true", "false"):
                 val = val.lower() == "true"
             else:
@@ -110,6 +115,43 @@ def context_from_text(text: str) -> dict[str, Any]:
 def _eval_expr(expr: str, env: Environment, ctx: dict[str, Any]) -> Any:
     """Evaluate a single ``{{ var }}`` expression via Jinja."""
     return env.from_string(expr).render(**ctx)
+
+
+def validate_context(ctx: dict[str, Any]) -> None:
+    """Reject source-code delimiters and invalid typed answers before writing files."""
+    if set(ctx) - set(DEFAULT_CTX) - {"cookiecutter"}:
+        raise ValueError("Unknown template answer")
+    if "cookiecutter" in ctx and ctx["cookiecutter"] is not ctx:
+        raise ValueError("cookiecutter must refer to the validated context")
+    for name, default in DEFAULT_CTX.items():
+        value = ctx.get(name)
+        if type(value) is not type(default):
+            raise ValueError(f"{name} must be a {type(default).__name__}")
+        if isinstance(value, str) and (
+            not value or len(value) > 4096
+            or any(ord(char) < 32 or ord(char) == 127 for char in value)
+            or any(char in value for char in ('"', "\\", "`", "$", "{", "}"))
+        ):
+            raise ValueError(f"{name} contains unsupported source-code delimiters")
+    for name in ("module_name", "class_name"):
+        value = ctx[name]
+        if not value.isascii() or not value.isidentifier() or keyword.iskeyword(value):
+            raise ValueError(f"{name} must be an ASCII Python identifier")
+    for name in ("project_slug", "github_org"):
+        if not re.fullmatch(r"[a-zA-Z0-9]+(?:[-_][a-zA-Z0-9]+)*", ctx[name]):
+            raise ValueError(f"{name} must contain only letters, digits, hyphens or underscores")
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+", ctx["service_name"]):
+        raise ValueError("service_name must be a dotted D-Bus identifier")
+    if ctx["device_type"] not in {"battery", "pv_inverter", "grid_meter", "tank", "temperature", "generic"}:
+        raise ValueError("Unsupported device_type")
+    if ctx["license_type"] != "MIT":
+        raise ValueError("Only the shipped MIT license template is supported")
+    if ctx["python_version"] != "3.12":
+        raise ValueError("Only Python 3.12 is supported")
+    if not re.fullmatch(r"\d+\.\d+\.\d+(?:(?:a|b|rc)\d+)?", ctx["version"]):
+        raise ValueError("version must be a three-part Python package version")
+    if not 0 <= ctx["service_instance"] <= 255 or not 1 <= ctx["mqtt_port_default"] <= 65535:
+        raise ValueError("Service instance or MQTT port is outside its supported range")
 
 
 def _render_path(rel: Path, env: Environment, ctx: dict[str, Any]) -> Path:
@@ -193,6 +235,7 @@ def render_tree(
     src: Path, dst: Path, env: Environment, ctx: dict[str, Any]
 ) -> list[Path]:
     """Render to a new directory without reading symlinks or local checkout state."""
+    validate_context(ctx)
     paths = source_files(src)
     if dst.exists() or dst.is_symlink():
         raise ValueError("Output must be a new directory; existing files are never removed")
