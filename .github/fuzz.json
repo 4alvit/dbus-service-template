@@ -29,7 +29,20 @@
         "-max_len=4096"
       ],
       "seconds": 60,
-      "corpus": "fuzz/corpus/render-context"
+      "corpus": "fuzz/corpus/render-context",
+      "instrumentation": [
+        {
+          "module": "render_template",
+          "functions": [
+            "context_from_text",
+            "_render_path"
+          ]
+        }
+      ]
     }
+  ],
+  "preflight-paths": [
+    "fuzz",
+    "scripts"
   ]
 }
