@@ -37,6 +37,19 @@ def complete() -> dict[str, Any]:
 class ScorecardJSONTests(unittest.TestCase):
     """Preserve findings while rejecting incomplete or unrelated scans."""
 
+    def test_actual_v560_report_preserves_complete_findings(self) -> None:
+        # From a v2.5.0 action run: retain every check's score and reason,
+        # replacing only repository identity and omitting unrelated metadata.
+        result = json.loads(
+            (Path(__file__).parent / "fixtures/scorecard-v5.6.0.json").read_text()
+        )
+        guard.validate(result, REPO, SHA)
+        broken = copy.deepcopy(result)
+        check = next(c for c in broken["checks"] if c["name"] == "Packaging")
+        check.update(score=-1, reason="internal error: packaging workflow not detected")
+        with self.assertRaisesRegex(ValueError, "Incomplete Scorecard check"):
+            guard.validate(broken, REPO, SHA)
+
     def test_complete_clean_and_failing_checks_pass(self) -> None:
         for score in (0, 4, 10):
             result = complete()
@@ -103,6 +116,10 @@ class ScorecardJSONTests(unittest.TestCase):
         for field, value in (
             ("repo", {"name": "github.com/other/repo", "commit": SHA}),
             ("repo", {"name": f"github.com/{REPO}", "commit": "b" * 40}),
+            (
+                "scorecard",
+                {"version": "v5.5.0", "commit": "c395761df6afe1a69e476bc60a013a94bcbc153f"},
+            ),
             ("scorecard", {"version": "v9.0.0", "commit": "b" * 40}),
         ):
             with self.subTest(field=field, value=value):
