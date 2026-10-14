@@ -11,13 +11,38 @@
     "bash scripts/ci.sh security"
   ],
   "notes": [
-    "Hardware-free checks do not validate a live Venus OS device, D-Bus firmware ABI, physical sensors or in-place device upgrades.",
-    "Candidate packaging preserves committed runtime version metadata. Nightly/beta/RC identity is recorded by the release manifest.",
-    "This repository is a reusable template; generated application versions are parameters. PR/nightly template validation is required; automatic template RC/stable publication is disabled.",
-    "Dependency review remains a PR-only comparison; callable full-source validation workflows run for nightly and candidate checks."
+    "Template source releases are independent of the version and deployment of any generated application.",
+    "Acceptance renders, installs and tests generated source in temporary directories; it does not run installers, contact brokers or validate hardware.",
+    "Only the explicit template-files.json inventory enters generated applications; repository release tooling and fuzz files are excluded."
   ],
-  "mode": "validation-only",
+  "mode": "release",
   "repository": "4alvit/dbus-service-template",
   "visibility": "public",
-  "single_entry_ci": true
+  "single_entry_ci": true,
+  "version_file": "SOURCE_VERSION",
+  "release_notes": "CHANGELOG.md",
+  "toolkit_revision": "5e413f80a4353d328b4529eae57992ac3987e2dd",
+  "versioning": {
+    "schema": 1,
+    "promotion": "promote-bytes",
+    "toolkit_revision": "5e413f80a4353d328b4529eae57992ac3987e2dd",
+    "files": [
+      {
+        "path": "SOURCE_VERSION",
+        "format": "text",
+        "value": "package"
+      }
+    ],
+    "artifacts": [
+      {
+        "path": "dbus-service-template-*.tar.gz",
+        "format": "tar-text",
+        "member": "dbus-service-template/SOURCE_VERSION",
+        "value": "package"
+      }
+    ]
+  },
+  "fuzzing": {
+    "toolkit_ref": "5e413f80a4353d328b4529eae57992ac3987e2dd"
+  }
 }

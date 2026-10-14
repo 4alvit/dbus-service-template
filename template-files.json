@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "files": [
+    ".github/workflows/ci.yml.j2",
+    ".github/workflows/release.yml.j2",
+    ".github/workflows/test.yml.j2",
+    ".github/workflows/venus-os-package.yml.j2",
+    ".gitignore",
+    ".pre-commit-config.yaml.j2",
+    ".python-version.j2",
+    ".ruff.toml.j2",
+    "LICENSE.j2",
+    "README.md.j2",
+    "config.example.yaml.j2",
+    "docs/tutorial.md.j2",
+    "packaging/venus-os/{{ project_slug }}/Makefile.j2",
+    "packaging/venus-os/{{ project_slug }}/setup.j2",
+    "packaging/venus-os/{{ project_slug }}/systemd/{{ project_slug }}.service.j2",
+    "pyproject.toml.j2",
+    "setup.j2",
+    "src/{{ module_name }}/__init__.py.j2",
+    "src/{{ module_name }}/__main__.py.j2",
+    "src/{{ module_name }}/config.py.j2",
+    "src/{{ module_name }}/models.py.j2",
+    "src/{{ module_name }}/mqtt_bridge.py.j2",
+    "src/{{ module_name }}/service.py.j2",
+    "tests/conftest.py.j2",
+    "tests/test_mqtt_bridge.py.j2",
+    "tests/test_service.py.j2"
+  ]
+}

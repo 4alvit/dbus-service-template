@@ -145,6 +145,10 @@ def build_package(root: Path, version: str, channel: str, output: Path) -> list[
     """Build reproducible archives and wheels, preserving committed version metadata."""
     config: PackageConfig = json.loads((root / ".release-package.json").read_text())
     validate_version(root, version, channel)
+    package_version = subprocess.check_output(
+        [sys.executable, str(root / "scripts/release_version_adapter.py"),
+         version, channel, "--root", str(root)], text=True,
+    ).strip()
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):
         message = "Output directory must be empty to prevent stale release assets"
@@ -152,7 +156,7 @@ def build_package(root: Path, version: str, channel: str, output: Path) -> list[
     tracked, selected = package_inputs(root, config)
     assets = []
     if selected:
-        archive = output / f"{config['name']}-{version}.tar.gz"
+        archive = output / f"{config['name']}-{package_version}.tar.gz"
         write_archive(root, config["name"], selected, archive)
         assets.append(archive)
     if config.get("wheel", False):
