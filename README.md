@@ -1,311 +1,89 @@
-# {{ project_name }}
-
-[![Fuzzing: RC only](https://img.shields.io/badge/fuzzing-RC_only-blue)](docs/fuzzing.md)
+# dbus-service-template
 
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15298/badge)](https://www.bestpractices.dev/projects/15298)
+[![Fuzzing: RC only](https://img.shields.io/badge/fuzzing-RC_only-blue)](docs/fuzzing.md)
 
-This badge tracks the assessment of the **dbus-service-template repository**.
-Generated services need their own assessment; they do not inherit this status.
+A Python source generator for D-Bus services on Victron Venus OS. The template
+provides typed configuration, device models, an optional MQTT bridge, Home
+Assistant discovery, tests and native daemontools installation scaffolding.
+Generated applications need review, configuration and their own hardware testing.
 
-{{ project_description }}
+The OpenSSF badge assesses **this repository**, including its renderer, release
+tooling and maintained service templates. Generated services do not inherit the
+badge, release version, governance or security promises of this repository.
 
-Generated from [dbus-service-template](https://github.com/4alvit/dbus-service-template) using [Copier](https://copier.readthedocs.io/).
+## Generate and test a service
 
----
-
-## Python runtime
-
-Native Venus OS packages target **Python 3.12.x**. The audited Cerbo on Venus OS
-v3.75 reports Python **3.12.13**; the [official Venus OS v3.79 manifest](https://updates.victronenergy.com/feeds/venus/release/sdk/venus-scarthgap-x86_64-arm-cortexa8hf-neon-toolchain-v3.79.target.manifest)
-also ships 3.12.13. Local development and CI use `.python-version` / Python
-3.12.13. Package metadata accepts 3.12 patch updates and rejects other minor
-versions until they have been validated. Use the firmware's system interpreter
-and its matching D-Bus/GI libraries on the device; do not replace the OS Python.
-
-
-## CI and deployment
-
-See [CI and deployment workflow](docs/release-workflow.md) for required checks and local commands. Template source has beta and RC channels; generated applications keep their own independent version. See [template source releases](docs/template-source-releases.md) and [bounded Linux fuzzing](docs/fuzzing.md).
-<!-- ci-release-process:end -->
-
-## Generate a project
-
-From a checkout of this template, run `python scripts/render_template.py output-dir`
-with Jinja2 installed. Pass an answers YAML file as the second argument to override
-the default project settings. Rendering preserves GitHub Actions expressions and
-fails visibly if a template references an unknown variable.
-
-Generated services honor `DEVICE_*` settings, including `DEVICE_CUSTOM_NAME`,
-`DEVICE_PRODUCT_NAME`, and `DEVICE_SERIAL_NUMBER`, when constructed directly or
-loaded from YAML. The MQTT bridge uses the service instance for its client ID and
-instance-specific topic mappings. MQTT uses protocol 3.1.1 and honors the configured
-`clean_session` setting; client construction does not require a broker connection.
-
-## Example Generated Output
-
-When you generate a project with `copier copy gh:4alvit/dbus-service-template my-battery-monitor` and provide:
-
-```yaml
-project_name: "My Battery Monitor"
-project_description: "JBD BMS to Venus OS D-Bus bridge"
-device_type: "battery"
-include_ha_discovery: true
-include_dvcc: true
-```
-
-The generated `README.md` will look like:
-
----
-
-# My Battery Monitor
-
-JBD BMS to Venus OS D-Bus bridge
-
-Generated from [dbus-service-template](https://github.com/4alvit/dbus-service-template) using [Copier](https://copier.readthedocs.io/).
-
-## Quick Start
-
-```bash
-# Install dependencies
-pip install -e ".[dev]"
-
-# Run locally (mock D-Bus)
-python -m my_battery_monitor --log-level DEBUG
-
-# Run tests
-pytest -v --cov=src/my_battery_monitor
-
-# Lint
-ruff check .
-mypy src/my_battery_monitor
-```
-
-...
-
-## D-Bus Paths (Standard Victron)
-
-Standard paths (auto-created):
-- `/Connected` - 1=connected, 0=disconnected
-- `/DeviceInstance` - Instance number
-- `/ProductId`, `/ProductName`, `/FirmwareVersion`
-- `/CustomName` - User-editable name
-
-Device-type specific paths:
-- `/Soc` - State of Charge (%)
-- `/Dc/0/Voltage`, `/Dc/0/Current`, `/Dc/0/Power`
-- `/Capacity`, `/TimeRemaining`
-- `/Alarm/*` - Alarm states
-
-## DVCC Integration
-
-Dynamic Voltage/Current Control paths:
-- `/Dc/0/MaxChargeCurrent`
-- `/Dc/0/MaxDischargeCurrent`
-- `/Dc/0/MaxChargeVoltage`
-- `/Dc/0/AllowCharge`
-- `/Dc/0/AllowDischarge`
-
-Use `service.set_max_charge_current(50.0)` to limit charging.
-
-...
-
----
-
-*Template variables above (`{{ ... }}`) are replaced with actual values during project generation.*
-
-```bash
-# Install dependencies
-pip install -e ".[dev]"
-
-# Run locally (mock D-Bus)
-python -m {{ module_name }} --log-level DEBUG
-
-# Run tests
-pytest -v --cov=src/{{ module_name }}
-
-# Lint
-ruff check .
-mypy src/{{ module_name }}
-```
-
-## Venus OS Deployment
-
-Venus OS uses daemontools (`/service`, `svc`, `svstat`) and a persistent
-`/data` partition. The generated `setup` installs there, preserves configuration,
-uses bounded `multilog` output under `/var/log`, and recreates the service link
-from `/data/rc.local` after reboot. It does not download dependencies at boot.
-
-Bootstrap dependencies on the target with wheels matching its architecture and
-Python ABI. A virtualenv must use `--system-site-packages` to access the firmware's
-`dbus-python` and GLib; never pip-install those bindings over the firmware copies.
-If `venv`/`ensurepip` is absent, prepare an offline bootstrap for that firmware.
-
-Copy the rendered project to `/data/<project_slug>` and run:
+Use Python **3.12.x**; CI pins 3.12.13. Clone a reviewed tag or source commit from
+[this repository](https://github.com/4alvit/dbus-service-template), then:
 
 ```sh
-bash /data/<project_slug>/setup install
-svstat /service/<project_slug> /service/<project_slug>/log
-tail -n 60 /var/log/<project_slug>/current
-bash /data/<project_slug>/setup uninstall
+python3.12 -m venv .venv-ci
+.venv-ci/bin/python -m pip install --require-hashes --only-binary=:all: -r .github/requirements-template.txt
+.venv-ci/bin/python scripts/render_template.py generated-service .copier-answers.yml.example
+.venv-ci/bin/python -m pip install --no-deps --no-build-isolation ./generated-service
+.venv-ci/bin/python -m pytest generated-service/tests/
 ```
 
-Uninstall removes supervision and the boot hook but retains device-local files.
-The old IPK recipe used OpenWrt make includes and systemd, neither of which is a
-supported Venus OS installation method. It now fails with an explicit migration
-message. Systemd examples apply only to a separate Linux development host.
+The output directory **must not exist**. The renderer does not remove old output.
+It accepts the simple scalar answers shown in `.copier-answers.yml.example`, not
+a general YAML document. Set identifiers explicitly; project names do not
+implicitly recompute module, class, topic or package names. Supported names and
+source-delimiter restrictions are explained in [the tutorial](docs/tutorial.md.j2).
+Use the supplied renderer; direct `copier copy` is not the validated generation
+path. `copier.yml` describes the available questions for compatibility and review.
 
-## Project Structure
+The sample answers generate `my_battery_monitor`. Omit the answers argument for
+`my_d_bus_service`. A generated project's `README.md` and `docs/tutorial.md`
+contain its own usage and installation instructions. Only the explicit
+[`template-files.json`](template-files.json) inventory becomes generated output.
+The template and its generated license text are MIT; another license requires a
+separate reviewed license-template change.
 
-```
-{{ project_slug }}/
-├── .github/workflows/     # CI/CD pipelines
-├── docs/                  # Documentation
-├── packaging/             # Venus OS SetupHelper packaging
-│   └── venus-os/
-├── src/{{ module_name }}/
-│   ├── __init__.py
-│   ├── __main__.py        # CLI entry point
-│   ├── config.py          # Configuration (YAML + env)
-│   ├── models.py          # Pydantic data models
-│   ├── mqtt_bridge.py     # MQTT bridge
-│   └── service.py         # D-Bus service
-├── tests/
-│   ├── test_service.py
-│   └── test_mqtt_bridge.py
-├── config.example.yaml
-├── pyproject.toml
-└── README.md
-```
+## Interfaces and operating boundaries
 
-## Key Files
+- `scripts/render_template.py OUTPUT [ANSWERS]` generates source without running
+  the generated application or installer. Nonzero exit means generation failed;
+  discard a partially written new directory before retrying.
+- Configuration uses `config.example.yaml`, `load_config()` and `DEVICE_`,
+  `MQTT_`, `BATTERY_`, `PV_`, `GRID_`, `TANK_` and `TEMP_` environment prefixes.
+- Generated `service.py` exposes standard D-Bus identity paths and device-specific
+  values. `set_path()` changes a path and callbacks publish corresponding values.
+  The MQTT bridge maps telemetry and `/set` topics to configured D-Bus paths.
+- Credentialed MQTT requires TLS. TLS verifies the server hostname and certificate
+  chain, uses TLS 1.2 or later and forward-secret modern ciphers at OpenSSL security level 3 (normally RSA 3072 or ECC 256-bit certificates). Plaintext MQTT
+  remains available only for credential-free, isolated test/local networks.
+  Broker ACLs must restrict who can publish telemetry and control commands.
+- Incoming MQTT payloads must be valid UTF-8 and no larger than 64 KiB. These
+  checks are not a device-specific validation or physical safety policy; validate
+  operating ranges and permitted commands in each generated application.
 
-| File | Purpose |
-|------|---------|
-| `src/{{ module_name }}/service.py` | D-Bus service with VeDbusService |
-| `src/{{ module_name }}/mqtt_bridge.py` | Async MQTT client with reconnection |
-| `src/{{ module_name }}/config.py` | YAML config + env var overrides |
-| `src/{{ module_name }}/models.py` | Pydantic models for device data |
-| `packaging/venus-os/{{ project_slug }}/Makefile` | Native Venus OS installation guidance |
+Venus OS packages use daemontools and persistent `/data`, not systemd or the old
+OpenWrt IPK recipe. Use the firmware's Python and matching D-Bus/GI libraries.
+Do not install development dependencies on a device or replace its OS interpreter.
+The [architecture and security design](docs/architecture.md) describes trust
+boundaries, limitations and extension points.
 
-## Configuration
+## Development, releases and participation
 
-Copy `config.example.yaml` to `config.yaml` and adjust:
+Run `bash scripts/ci.sh --install`, then `bash scripts/ci.sh` for the local lint,
+renderer, generated-service and security checks. See [quality and build
+instructions](docs/quality-and-build.md) for complete commands and coverage scope.
 
-```yaml
-mqtt:
-  broker: "192.168.1.100"
-  topic_prefix: "{{ topic_prefix }}"
-  ha_discovery: {% if include_ha_discovery %}true{% else %}false{% endif %}
+[`SOURCE_VERSION`](SOURCE_VERSION) versions the template source separately from
+the generated application's `version` answer. [Releases](https://github.com/4alvit/dbus-service-template/releases)
+identify immutable tags; [CHANGELOG.md](CHANGELOG.md) explains changes and migration.
+The [release policy](RELEASING.md), [source release contract](docs/template-source-releases.md)
+and [release runbook](docs/release-workflow.md) distinguish beta, RC and stable.
+An RC runs additional bounded fuzzing. Passing CI does not authorize device deployment.
 
-device:
-  product_name: "{{ project_name }}"
-  firmware_version: "0.1.0"
-  serial_number: "UNIQUE_ID"
-```
-
-Environment variables override config (prefix: `APP_`, `MQTT_`, `DEVICE_`, etc.):
-
-```bash
-export MQTT_BROKER=192.168.1.100
-export DEVICE_PRODUCT_NAME="My Device"
-python -m {{ module_name }}
-```
-
-## D-Bus Paths (Standard Victron)
-
-Standard paths (auto-created):
-- `/Connected` - 1=connected, 0=disconnected
-- `/DeviceInstance` - Instance number
-- `/ProductId`, `/ProductName`, `/FirmwareVersion`
-- `/CustomName` - User-editable name
-
-Device-type specific paths:
-{% if device_type == "battery" %}
-- `/Soc` - State of Charge (%)
-- `/Dc/0/Voltage`, `/Dc/0/Current`, `/Dc/0/Power`
-- `/Capacity`, `/TimeRemaining`
-- `/Alarm/*` - Alarm states
-{% elif device_type == "pv_inverter" %}
-- `/Ac/Power`, `/Ac/L1/Voltage`, `/Ac/L1/Current`
-- `/Ac/Energy/Forward`
-{% elif device_type == "grid_meter" %}
-- `/Ac/Power`, `/Ac/L1/Voltage`, `/Ac/L1/Current`
-- `/Ac/Energy/Forward`, `/Ac/Energy/Reverse`
-{% elif device_type == "tank" %}
-- `/Level`, `/Capacity`, `/Remaining`
-{% elif device_type == "temperature" %}
-- `/Temperature`
-{% else %}
-- `/Value`, `/Unit`
-{% endif %}
-
-## DVCC Integration
-
-{% if include_dvcc %}
-Dynamic Voltage/Current Control paths:
-- `/Dc/0/MaxChargeCurrent`
-- `/Dc/0/MaxDischargeCurrent`
-- `/Dc/0/MaxChargeVoltage`
-- `/Dc/0/AllowCharge`
-- `/Dc/0/AllowDischarge`
-
-Use `service.set_max_charge_current(50.0)` to limit charging.
-{% else %}
-DVCC not enabled. Enable in template with `include_dvcc=true`.
-{% endif %}
-
-## MQTT Topics
-
-Default mappings (customizable in code):
-
-| MQTT Topic | D-Bus Path |
-|------------|------------|
-| `{{ topic_prefix }}/voltage` | `/Dc/0/Voltage` |
-| `{{ topic_prefix }}/current` | `/Dc/0/Current` |
-| `{{ topic_prefix }}/soc` | `/Soc` |
-| `{{ topic_prefix }}/.../set` | Write to D-Bus |
-
-SET topics (e.g., `topic/set`) allow MQTT → D-Bus control.
-
-{% if include_ha_discovery %}
-## Home Assistant Discovery
-
-Auto-publishes sensor configs on connect:
-- Topic: `homeassistant/sensor/{unique_id}/config`
-- Retained messages with device info
-{% endif %}
-
-## Testing
-
-```bash
-# Unit tests
-pytest tests/ -v
-
-# With coverage
-pytest --cov=src/{{ module_name }} --cov-report=html
-
-# Type check
-mypy src/{{ module_name }}
-```
+Report bugs, propose features or ask questions through [GitHub Issues](https://github.com/4alvit/dbus-service-template/issues).
+Read [CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md),
+[GOVERNANCE.md](GOVERNANCE.md), [the roadmap](docs/roadmap.md) and
+[SECURITY.md](SECURITY.md) for review, conduct and confidential vulnerability reporting.
+[The OpenSSF evidence index](docs/openssf-evidence.md) records verified behavior and
+remaining requirements; this project does not currently claim a Silver badge.
 
 ## License
 
-{{ license_type }} License - see [LICENSE](LICENSE)
-
-## Documentation
-
-- [System Architecture](./.github/docs/system-architecture.md) - Data flow diagrams, runbook
-- [ADR](.github/docs/adr-001.md) - Architecture Decision Records
-
-## Contributing and security
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development, bug reports and proposals,
-[SECURITY.md](SECURITY.md) for confidential vulnerability reports and deployment
-boundaries, and the [OpenSSF evidence index](https://github.com/4alvit/dbus-service-template/blob/main/docs/openssf-evidence.md) for assessment
-scope and verification.
-
-The renderer requires a **new output directory** and never removes an existing one.
-Only files declared in `template-files.json` enter generated applications; add new
-template files to both the inventory and Git before previewing them. Source symlinks and path traversal in answers are rejected. Local
-environments, credential files and this template’s badge assessment are not project
-inputs. Review generated source and configure access controls before deployment.
+[MIT](LICENSE). Third-party Python tools and libraries keep their own licenses.

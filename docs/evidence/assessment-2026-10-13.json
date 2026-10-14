@@ -1,0 +1,89 @@
+{
+  "assessment_date": "2026-10-13",
+  "repository": "4alvit/dbus-service-template",
+  "badge_id": 15298,
+  "source_base": "6953cfc",
+  "scope": "Renderer, repository release tooling, maintained generated service templates; no downstream deployment badge inheritance.",
+  "human_attestation": {
+    "secure_design_and_common_errors": true,
+    "external_bug_enhancement_vulnerability_reports_last_12_months": false,
+    "backup_maintainer_or_tested_access_recovery": false
+  },
+  "validation": {
+    "python": "3.12.13",
+    "renderer_and_fuzz_seed_tests_passed": 19,
+    "generated_service_tests_passed": 51,
+    "generated_service_skips": 0,
+    "generated_statement_coverage": {
+      "covered": 607,
+      "total": 922,
+      "percent": 65.84,
+      "whole_project": false
+    },
+    "workflow_contract_tests_passed": 22,
+    "ruff_tooling_and_generated_source": "passed",
+    "generated_source_bandit": "zero findings",
+    "source_bandit": {
+      "high": 0,
+      "medium": 0,
+      "low_subprocess_review_notices": 30,
+      "errors": 0
+    },
+    "real_tls_tests": {
+      "trusted_RSA_2048": "rejected",
+      "trusted_RSA_3072": "accepted",
+      "network": "isolated loopback only; no MQTT traffic"
+    },
+    "warnings": "5 expected Paho callback API v1 deprecations remain visible; maximum warning strictness unmet",
+    "fuzz_campaign": "Not newly executed for this assessment. Unit seed replay is not a campaign.",
+    "release_contract_tests_passed": 462,
+    "source_archive_acceptance": {
+      "result": "passed",
+      "scope": "Exact archive membership/bytes; fresh isolated environment; rendered package version 9.8.7 installed; 18 extracted renderer tests and 51 generated-service tests. Local source build only, no release publication."
+    }
+  },
+  "github_audit": {
+    "ordinary_issues": 0,
+    "public_project_advisories": 0,
+    "open_dependabot_alerts": 0,
+    "open_secret_alerts": 0,
+    "private_vulnerability_reporting": true,
+    "code_scanning_open": [
+      {
+        "number": 28,
+        "rule": "PinnedDependenciesID"
+      },
+      {
+        "number": 9,
+        "rule": "CIIBestPracticesID"
+      },
+      {
+        "number": 8,
+        "rule": "CodeReviewID"
+      },
+      {
+        "number": 7,
+        "rule": "MaintainedID"
+      },
+      {
+        "number": 1,
+        "rule": "BranchProtectionID"
+      }
+    ],
+    "notes": "These are Scorecard process recommendations, not confirmed exploitable application vulnerabilities. Rulesets require reviewed PR, CI gate and CodeQL."
+  },
+  "security_limits": [
+    "Credential-free plaintext MQTT is only for isolated trusted networks.",
+    "OpenSSL security level 3 is intentionally stricter than the OpenSSF minimum; RSA 2048 broker certificates must be upgraded.",
+    "Generated applications require separate ACLs, physical safety validation and hardware acceptance.",
+    "No reserve maintainer or recovery mechanism exists."
+  ],
+  "source_sha256": {
+    "scripts/render_template.py": "46164026c483f78834fae7a7306eaddd955c388351a1e75b1d259072b4141f64",
+    "src/{{ module_name }}/config.py.j2": "876423e353f1e054b1cbe543ea29904d366dffa6ac46458a366b7cc31dd3fb30",
+    "src/{{ module_name }}/mqtt_bridge.py.j2": "aa0cb43d8fe2de2cd3e71a1ddb6b7df42eed1b164a525e75444835c0be47bbdf",
+    "scripts/test_render_template.py": "6b2c8e0aae96229b7e5eea575af175c3e3a43d1cfc04f27f7c100f15488f5d00",
+    "tests/test_mqtt_bridge.py.j2": "34682610b397ece70da579c904ebbdb3a7d968440d264b7b5aa95c243e5c6751",
+    ".github/workflows/generate-test.yml": "a07a13e3bb733ee598235543365f5ebba34dcb02d154e69c41f8728260e8a095"
+  }
+}

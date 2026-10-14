@@ -74,6 +74,90 @@ class TestMQTTBridge:
         assert bridge.config.topic_prefix == "test"
         assert bridge._connected is True
 
+    @pytest.mark.parametrize("payload", [b"\xff", b"x" * 65537])
+    def test_invalid_wire_payload_does_not_mutate_dbus(self, bridge, payload):
+        message = Mock(topic="test/voltage", payload=payload)
+        bridge._on_message(None, None, message)
+        bridge.db.set_path.assert_not_called()
+        assert bridge._errors == 1
+
+    def test_real_tls_context_requires_modern_verified_pfs(self, mock_dbus_service):
+        import ssl
+
+        bridge = MQTTBridge(MQTTConfig(use_tls=True), mock_dbus_service)
+        bridge._create_client()
+        context = bridge._client._ssl_context
+        assert context.minimum_version == ssl.TLSVersion.TLSv1_2
+        assert context.verify_mode == ssl.CERT_REQUIRED
+        assert context.check_hostname
+        assert context.security_level >= 3
+        for cipher in context.get_ciphers():
+            assert cipher["strength_bits"] >= 128
+            if cipher["protocol"] != "TLSv1.3":
+                assert cipher["kea"] in {"kx-ecdhe", "kx-dhe"}
+                assert cipher["aead"]
+
+    @pytest.mark.parametrize("credentials", [
+        {"username": "demo"}, {"password": "synthetic-test"},
+        {"client_cert": "synthetic.pem", "client_key": "synthetic.key"},
+    ])
+    def test_credentials_require_tls(self, credentials):
+        with pytest.raises(ValueError, match="require use_tls"):
+            MQTTConfig(**credentials)
+        assert MQTTConfig(use_tls=True, **credentials).use_tls
+
+    def test_client_certificate_pair_required(self):
+        with pytest.raises(ValueError, match="supplied together"):
+            MQTTConfig(use_tls=True, client_cert="synthetic.pem")
+
+    @pytest.mark.parametrize("key_bits,accepted", [(2048, False), (3072, True)])
+    def test_real_tls_handshake_enforces_certificate_strength(self, mock_dbus_service, tmp_path, key_bits, accepted):
+        """Use ephemeral synthetic certificates and a loopback TLS peer, no MQTT traffic."""
+        import concurrent.futures
+        import shutil
+        import socket
+        import ssl
+        import subprocess
+
+        openssl = shutil.which("openssl")
+        if not openssl:
+            pytest.skip("OpenSSL CLI is required for synthetic certificate generation")
+        key, cert = tmp_path / "test-key.pem", tmp_path / "test-cert.pem"
+        subprocess.run([
+            openssl, "req", "-x509", "-newkey", f"rsa:{key_bits}", "-nodes",
+            "-keyout", str(key), "-out", str(cert), "-days", "1",
+            "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost",
+        ], check=True, capture_output=True)
+        server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        server_context.minimum_version = ssl.TLSVersion.TLSv1_2
+        server_context.load_cert_chain(cert, key)
+        bridge = MQTTBridge(MQTTConfig(use_tls=True, ca_cert=str(cert)), mock_dbus_service)
+        bridge._create_client()
+
+        def serve(listener):
+            raw, _ = listener.accept()
+            with raw:
+                raw.settimeout(5)
+                try:
+                    with server_context.wrap_socket(raw, server_side=True):
+                        return True
+                except ssl.SSLError:
+                    return False
+
+        with socket.socket() as listener, concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            listener.bind(("127.0.0.1", 0))
+            listener.settimeout(5)
+            listener.listen(1)
+            future = executor.submit(serve, listener)
+            with socket.create_connection(listener.getsockname(), timeout=5) as raw:
+                if accepted:
+                    with bridge._client._ssl_context.wrap_socket(raw, server_hostname="localhost"):
+                        pass
+                else:
+                    with pytest.raises(ssl.SSLCertVerificationError, match="key too weak"):
+                        bridge._client._ssl_context.wrap_socket(raw, server_hostname="localhost")
+            assert future.result(timeout=5) is accepted
+
     def test_topic_mappings_battery(self, mock_dbus_service):
         """Test battery topic mappings."""
         config = MQTTConfig(topic_prefix="battery")

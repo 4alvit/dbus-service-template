@@ -5,8 +5,8 @@
 mqtt:
   broker: "{{ mqtt_broker_default }}"
   port: {{ mqtt_port_default }}
-  username: ""  # Optional
-  password: ""  # Optional
+  username: null  # Optional; credentials require use_tls: true
+  password: null
   topic_prefix: "{{ topic_prefix }}"
   client_id: "{{ module_name }}"
   keepalive: 60

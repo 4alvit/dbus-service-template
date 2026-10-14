@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -66,6 +66,19 @@ class MQTTConfig(BaseSettings):
     # Home Assistant discovery
     ha_discovery: bool = {% if cookiecutter.include_ha_discovery %}True{% else %}False{% endif %}
     device_name: str | None = None
+
+    @model_validator(mode="after")
+    def validate_transport_credentials(self) -> MQTTConfig:
+        """Never send broker credentials without authenticated TLS."""
+        has_credentials = (
+            self.username is not None or self.password is not None
+            or self.client_cert or self.client_key
+        )
+        if has_credentials and not self.use_tls:
+            raise ValueError("MQTT credentials require use_tls=true")
+        if bool(self.client_cert) != bool(self.client_key):
+            raise ValueError("MQTT client certificate and key must be supplied together")
+        return self
 
     @field_validator("port")
     @classmethod

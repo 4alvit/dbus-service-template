@@ -17,8 +17,12 @@ coordinating with the maintainers.
 
 Security fixes target the current default branch and the latest maintained release, where releases exist. Older versions are not promised backports. Maintainers aim to acknowledge private reports within 14 days, investigate and communicate status within 60 days, and coordinate disclosure with the reporter. Confirmed vulnerabilities with a practical fix receive priority over feature work; publish an advisory and release notes that identify affected versions, mitigation and the fixed version. If a fix takes longer, keep the reporter informed without exposing confidential details.
 
+Reporters of a confirmed vulnerability receive credit in the advisory/release notes unless they request anonymity. Maintainers record triage, affected versions, remediation, validation and coordinated disclosure; include an assigned CVE or advisory identifier in the release notes where one exists. No confirmed external reports were received in the 12 months preceding the maintainer's 2026-10-13 attestation.
+
 ## Deployment trust boundaries
 
 Template values influence generated files and service behavior. Treat provided names, paths and configuration as untrusted; preserve identifier/path validation and avoid executing generated output during rendering. Generated services can interact with D-Bus and MQTT, so production operators must isolate brokers, restrict service permissions and review write paths before installation.
+
+The [architecture/security design](docs/architecture.md) documents the actual transport, credential, template-input and deployment boundaries. Outbound MQTT credentials require TLS, and the generated TLS context uses OpenSSL security level 3. Private client keys and broker passwords remain operator-managed.
 
 Use synthetic data for testing. Never attach live tokens, private keys, database exports or household telemetry to public CI artifacts. Report a suspected credential exposure privately and revoke the credential through its issuer. See [CONTRIBUTING.md](CONTRIBUTING.md) for validation and [the evidence index](https://github.com/4alvit/dbus-service-template/blob/main/docs/openssf-evidence.md) for assessment limits.
