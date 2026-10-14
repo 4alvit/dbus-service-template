@@ -1,0 +1,3 @@
+mqtt_enabled: false
+service_instance: 42
+version: 9.8.7

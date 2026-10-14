@@ -1,0 +1,11 @@
+# {{ project_name }}
+
+{{ project_description }}
+
+Generated application version: {{ version }}. The source template has its own
+independent release version.
+
+Use Python {{ python_version }} and install the project with `pip install -e '.[dev]'`.
+Run `pytest tests/` before configuring a real broker or a Venus OS device.
+Device libraries and hardware acceptance must be supplied and checked separately.
+The generated installer is not executed by template rendering or template release tests.

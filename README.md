@@ -1,5 +1,7 @@
 # {{ project_name }}
 
+[![Fuzzing: RC only](https://img.shields.io/badge/fuzzing-RC_only-blue)](docs/fuzzing.md)
+
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15298/badge)](https://www.bestpractices.dev/projects/15298)
 
 This badge tracks the assessment of the **dbus-service-template repository**.
@@ -23,7 +25,7 @@ and its matching D-Bus/GI libraries on the device; do not replace the OS Python.
 
 ## CI and deployment
 
-See [CI and deployment workflow](docs/release-workflow.md) for required checks and local commands. This repository uses validation-only policy; application release channels do not apply.
+See [CI and deployment workflow](docs/release-workflow.md) for required checks and local commands. Template source has beta and RC channels; generated applications keep their own independent version. See [template source releases](docs/template-source-releases.md) and [bounded Linux fuzzing](docs/fuzzing.md).
 <!-- ci-release-process:end -->
 
 ## Generate a project
@@ -303,7 +305,7 @@ boundaries, and the [OpenSSF evidence index](https://github.com/4alvit/dbus-serv
 scope and verification.
 
 The renderer requires a **new output directory** and never removes an existing one.
-In a Git checkout it reads only tracked files; add new template files to Git before
-previewing them. Source symlinks and path traversal in answers are rejected. Local
+Only files declared in `template-files.json` enter generated applications; add new
+template files to both the inventory and Git before previewing them. Source symlinks and path traversal in answers are rejected. Local
 environments, credential files and this template’s badge assessment are not project
 inputs. Review generated source and configure access controls before deployment.

@@ -78,17 +78,24 @@ def render_environment() -> Environment:
 
 def load_ctx(answers: Path | None) -> dict[str, Any]:
     """Build the render context, overlaying any answers YAML on the defaults."""
+    return context_from_text(answers.read_text() if answers and answers.is_file() else "")
+
+
+def context_from_text(text: str) -> dict[str, Any]:
+    """Parse the renderer's existing scalar answer syntax without filesystem I/O."""
     ctx: dict[str, Any] = dict(DEFAULT_CTX)
     # cookiecutter is a legacy alias — some templates reference it.
     ctx["cookiecutter"] = ctx
-    if answers and answers.is_file():
-        for line in answers.read_text().splitlines():
+    if text:
+        for line in text.splitlines():
             line = line.strip()
             if not line or line.startswith("#") or ":" not in line:
                 continue
             key, _, val = line.partition(":")
             val = val.strip().strip('"').strip("'")
             key = key.strip()
+            if key == "cookiecutter":
+                raise ValueError("cookiecutter is a reserved context alias")
             if val.lower() in ("true", "false"):
                 val = val.lower() == "true"
             else:
@@ -139,8 +146,30 @@ def _render_template(src_path: Path, env: Environment, ctx: dict[str, Any]) -> s
     return env.from_string(source).render(**ctx)
 
 
+def inventory_files(src: Path, manifest: Path) -> list[Path]:
+    """Read the explicit generated-application inventory."""
+    if manifest.is_symlink() or not manifest.is_file():
+        raise ValueError("Template inventory must be a regular file")
+    data = json.loads(manifest.read_text())
+    names = data.get("files") if isinstance(data, dict) else None
+    if not isinstance(names, list) or not names:
+        raise ValueError("Template inventory must contain files")
+    if any(not isinstance(name, str) for name in names) or len(set(names)) != len(names):
+        raise ValueError("Template inventory must contain unique paths")
+    paths = []
+    for name in names:
+        path = Path(name)
+        if path.is_absolute() or ".." in path.parts or str(path) != name:
+            raise ValueError("Template inventory paths must be canonical and relative")
+        paths.append(src / path)
+    return sorted(paths)
+
+
 def source_files(src: Path) -> list[Path]:
-    """Use tracked source in a checkout; exclude local state in source archives."""
+    """Select the inventory; legacy fixtures fall back to tracked source files."""
+    manifest = src / "template-files.json"
+    if manifest.exists() or manifest.is_symlink():
+        return inventory_files(src, manifest)
     if (src / ".git").exists():
         result = subprocess.check_output(
             ["git", "-C", str(src), "ls-files", "--cached", "-z"]
@@ -168,6 +197,7 @@ def render_tree(
     if dst.exists() or dst.is_symlink():
         raise ValueError("Output must be a new directory; existing files are never removed")
     plans = []
+    destinations: set[Path] = set()
     for src_path in paths:
         current = src
         for component in src_path.relative_to(src).parts:
@@ -181,6 +211,9 @@ def render_tree(
             rel = rel.with_name(rel.stem)
         if rel.is_absolute() or not (dst / rel).resolve().is_relative_to(dst.resolve()):
             raise ValueError("Template output path escapes the destination")
+        if rel in destinations:
+            raise ValueError("Template files collide at the same output path")
+        destinations.add(rel)
         plans.append((src_path, dst / rel))
     dst.mkdir(parents=True, exist_ok=False)
     written: list[Path] = []

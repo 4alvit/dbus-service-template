@@ -1,5 +1,6 @@
 """Regression tests for rendered files, without executing any generated workflow."""
 
+import json
 import subprocess
 import unittest
 from pathlib import Path
@@ -10,8 +11,10 @@ from jinja2 import UndefinedError
 from render_template import (
     DEFAULT_CTX,
     _render_template,
+    context_from_text,
     render_environment,
     render_tree,
+    source_files,
 )
 
 
@@ -181,6 +184,52 @@ class RenderTemplateTests(unittest.TestCase):
             (source / "tracked.py.j2").write_text("value = 1")
             render_tree(source, output, render_environment(), DEFAULT_CTX)
             self.assertEqual({path.name for path in output.iterdir()}, {"tracked.py"})
+
+
+    def test_inventory_excludes_repository_tools_in_checkout_and_archive(self):
+        for checkout in (False, True):
+            with self.subTest(checkout=checkout), TemporaryDirectory() as directory:
+                source = Path(directory) / "source"
+                source.mkdir()
+                (source / "app.py.j2").write_text("answer = 42\n")
+                (source / "release.py").write_text("raise RuntimeError('repository tool')")
+                (source / "fuzz").mkdir()
+                (source / "fuzz" / "target.py").write_text("raise RuntimeError('fuzzer')")
+                (source / "template-files.json").write_text(json.dumps({"files": ["app.py.j2"]}))
+                if checkout:
+                    subprocess.run(["git", "init", "--quiet", str(source)], check=True)
+                    subprocess.run(["git", "-C", str(source), "add", "."], check=True)
+                output = Path(directory) / "output"
+                render_tree(source, output, render_environment(), DEFAULT_CTX)
+                self.assertEqual({p.name for p in output.iterdir()}, {"app.py"})
+
+    def test_inventory_rejects_ambiguous_and_escaping_paths(self):
+        with TemporaryDirectory() as directory:
+            source = Path(directory)
+            for files in (["../escape"], ["/tmp/escape"], ["a", "a"], [1], []):
+                with self.subTest(files=files):
+                    (source / "template-files.json").write_text(json.dumps({"files": files}))
+                    with self.assertRaises(ValueError):
+                        source_files(source)
+
+    def test_two_source_files_cannot_overwrite_one_output(self):
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "source"
+            source.mkdir()
+            (source / "same.py").write_text("first = True")
+            (source / "same.py.j2").write_text("second = True")
+            with self.assertRaisesRegex(ValueError, "collide"):
+                render_tree(source, Path(directory) / "output", render_environment(), DEFAULT_CTX)
+            self.assertFalse((Path(directory) / "output").exists())
+
+    def test_pure_context_parser_preserves_alias_and_scalar_behavior(self):
+        ctx = context_from_text("# comment\nversion: 9.8.7\nmqtt_enabled: false\nservice_instance: 42\n")
+        self.assertIs(ctx["cookiecutter"], ctx)
+        self.assertEqual(ctx["version"], "9.8.7")
+        self.assertEqual(ctx["service_instance"], 42)
+        self.assertFalse(ctx["mqtt_enabled"])
+        with self.assertRaisesRegex(ValueError, "reserved"):
+            context_from_text("cookiecutter: replacement")
 
 
 if __name__ == "__main__":
