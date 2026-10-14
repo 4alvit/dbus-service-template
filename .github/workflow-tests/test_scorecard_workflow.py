@@ -1,11 +1,18 @@
 """Keep OpenSSF publication compatible and GitHub upload fail closed."""
 
+import json
+import runpy
 import unittest
 from pathlib import Path
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
+REVIEWED_ACTION = "ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e"
+REVIEWED_REPORT = {
+    "version": "v5.6.0",
+    "commit": "61e84743356275f6ffca23b1b2f2cb945e19eb96",
+}
 ALLOWED = {
     "actions/checkout",
     "actions/upload-artifact",
@@ -33,9 +40,12 @@ def validate(workflow):
     for step in publisher["steps"]:
         assert "run" not in step
         assert step["uses"].split("@")[0] in ALLOWED
-    scan = next(
+    scans = [
         s for s in publisher["steps"] if s["uses"].startswith("ossf/scorecard-action@")
-    )
+    ]
+    # A new action revision must have its emitted report contract reviewed too.
+    assert [scan["uses"] for scan in scans] == [REVIEWED_ACTION]
+    scan = scans[0]
     assert scan["with"]["publish_results"] == "true"
     artifact = next(
         s
@@ -79,6 +89,24 @@ class ScorecardWorkflowTests(unittest.TestCase):
 
     def test_publishing_and_guarded_upload_contract(self):
         validate(self.workflow)
+
+    def test_action_version_guard_and_actual_report_agree(self):
+        validate(self.workflow)
+        guard = runpy.run_path(str(ROOT / "scripts/validate_scorecard_json.py"))
+        fixture = json.loads(
+            (ROOT / "tests/fixtures/scorecard-v5.6.0.json").read_text()
+        )
+        self.assertEqual(guard["VERSION"], REVIEWED_REPORT)
+        self.assertEqual(fixture["scorecard"], REVIEWED_REPORT)
+        self.assertEqual(fixture["_provenance"]["action"], REVIEWED_ACTION)
+        guard["validate"](fixture, "owner/project", "a" * 40)
+
+    def test_unreviewed_action_revision_is_rejected(self):
+        for step in self.workflow["jobs"]["scorecard"]["steps"]:
+            if step["uses"].startswith("ossf/scorecard-action@"):
+                step["uses"] = "ossf/scorecard-action@" + "b" * 40
+        with self.assertRaises(AssertionError):
+            validate(self.workflow)
 
     def test_custom_run_in_publishing_job_is_rejected(self):
         self.workflow["jobs"]["scorecard"]["steps"].append({"run": "python3 guard.py"})

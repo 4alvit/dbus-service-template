@@ -98,5 +98,11 @@
       "score": 10,
       "reason": "26 out of 26 merged PRs checked by a CI test -- score normalized to 10"
     }
-  ]
+  ],
+  "_provenance": {
+    "action": "ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e",
+    "source_run": "https://github.com/victron-venus/venus-os-integration-patterns/actions/runs/38444878030",
+    "original_sha256": "b43953376b5d5430c19a5a5698f02f40487215510511ef68bf21452fa8db2b44",
+    "sanitization": "Original 18 check names, scores and reasons; repository and commit anonymized, other report metadata omitted."
+  }
 }
