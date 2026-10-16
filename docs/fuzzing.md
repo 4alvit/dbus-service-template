@@ -1,5 +1,9 @@
 # RC fuzz qualification
 
+See the [illustrated RC fuzzing process and verified rollout results](https://github.com/victron-venus/venus-os-ci-toolkit/blob/main/docs/rc-fuzzing-results.md)
+for the shared release flow, evidence requirements and a dated cross-project
+snapshot. The project-specific scope and reproduction guidance below still apply.
+
 The `render-context` target invokes the production `context_from_text` scalar
 answer parser and `_render_path` with a trusted fixed template path. It verifies
 that the legacy cookiecutter alias is preserved, parsing/rendering are deterministic,
