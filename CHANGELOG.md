@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.3] - 2026-10-17
+
+### Changed
+
+- Clarify where RC fuzz safeguards execute and add illustrated process and result guides.
+
+### Upgrade
+
+Template behavior and supported answer formats are unchanged from 0.1.2. Generate into a fresh directory, compare the result with existing applications, and preserve local configuration for rollback.
+
+### Security
+
+No new runtime security fix is claimed. Existing answer validation, template checks and source-bound RC fuzzing remain required; generated applications still require target-device acceptance.
+
 ## [0.1.2] - 2026-10-14
 
 ### Changed
