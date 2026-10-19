@@ -23,14 +23,11 @@ SHA = "a" * 40
 
 
 def complete() -> dict[str, Any]:
-    """Build a complete result, including upstream disabled checks."""
+    """Build a complete result with all upstream checks scored."""
     return {
         "repo": {"name": f"github.com/{REPO}", "commit": SHA},
         "scorecard": guard.VERSION.copy(),
-        "checks": [
-            {"name": name, "score": -1 if name in guard.DISABLED else 10}
-            for name in sorted(guard.CHECKS)
-        ],
+        "checks": [{"name": name, "score": 10} for name in sorted(guard.CHECKS)],
     }
 
 
@@ -87,10 +84,52 @@ class ScorecardJSONTests(unittest.TestCase):
                     guard.validate(result, REPO, SHA)
 
     def test_invalid_or_incomplete_checks_fail(self) -> None:
-        for score in (-1, -2, 11, True, "10", None):
-            with self.subTest(score=score):
+        for original in complete()["checks"]:
+            for score in (-1, -2, 11, True, "10", None):
+                with self.subTest(name=original["name"], score=score):
+                    result = complete()
+                    check = next(
+                        x for x in result["checks"] if x["name"] == original["name"]
+                    )
+                    check["score"] = score
+                    with self.assertRaises((TypeError, ValueError)):
+                        guard.validate(result, REPO, SHA)
+
+    def test_no_releases_is_distinct_from_signed_release_errors(self) -> None:
+        result = complete()
+        check = next(x for x in result["checks"] if x["name"] == "Signed-Releases")
+        check.update(score=-1, reason="no releases found")
+        guard.validate(result, REPO, SHA)
+        for change in (
+            {"reason": "no release found"},
+            {"reason": "internal error: no releases found"},
+            {"reason": "No releases found"},
+            {"reason": None},
+            {"error": "API failed"},
+            {"score": -1.0},
+        ):
+            with self.subTest(change=change):
+                invalid = copy.deepcopy(result)
+                check = next(
+                    x for x in invalid["checks"] if x["name"] == "Signed-Releases"
+                )
+                check.update(change)
+                with self.assertRaises((TypeError, ValueError)):
+                    guard.validate(invalid, REPO, SHA)
+        invalid = complete()
+        contributor = next(x for x in invalid["checks"] if x["name"] == "Contributors")
+        contributor.update(score=-1, reason="no releases found")
+        with self.assertRaises((TypeError, ValueError)):
+            guard.validate(invalid, REPO, SHA)
+
+    def test_explicit_errors_fail_even_with_valid_scores(self) -> None:
+        for original in complete()["checks"]:
+            with self.subTest(name=original["name"]):
                 result = complete()
-                result["checks"][0]["score"] = score
+                check = next(
+                    x for x in result["checks"] if x["name"] == original["name"]
+                )
+                check.update(score=5, error="API failed")
                 with self.assertRaises((TypeError, ValueError)):
                     guard.validate(result, REPO, SHA)
 
@@ -118,7 +157,10 @@ class ScorecardJSONTests(unittest.TestCase):
             ("repo", {"name": f"github.com/{REPO}", "commit": "b" * 40}),
             (
                 "scorecard",
-                {"version": "v5.5.0", "commit": "c395761df6afe1a69e476bc60a013a94bcbc153f"},
+                {
+                    "version": "v5.5.0",
+                    "commit": "c395761df6afe1a69e476bc60a013a94bcbc153f",
+                },
             ),
             ("scorecard", {"version": "v9.0.0", "commit": "b" * 40}),
         ):
