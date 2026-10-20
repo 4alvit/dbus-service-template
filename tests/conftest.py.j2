@@ -1,174 +1,119 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Fake dbus/vedbus for testing generated services without Venus OS.
-Drop this into tests/ of any generated project and it takes effect via
-the sys.path / vedbus import in service.py.j2 (VELIB_PATHS are checked first,
-so a local fake takes precedence on dev machines / CI).
+"""Portable fixtures, including a strict Venus OS dependency contract double."""
 
-Usage in conftest.py:
-    import sys
-    sys.path.insert(0, str(Path(__file__).parent))
-    # vedbus / dbus imports now resolve to our fakes
-"""
-
-from __future__ import annotations
-
-import logging
+import importlib.util
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from types import ModuleType, SimpleNamespace
 
-# Prepend tests/ so this module resolves before velib_python on Venus OS.
-sys.path.insert(0, str(Path(__file__).parent))
-
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger("fake_dbus")
+import pytest
 
 
-# ---------------------------------------------------------------------------
-# VeDbusService mock
-# ---------------------------------------------------------------------------
+@pytest.fixture
+def platform_runtime(monkeypatch):
+    """Import the real-dependency branch without connecting to a system D-Bus.
 
-class VeDbusService:
-    """Minimal VeDbusService replacement for testing."""
+    The double deliberately exposes only public methods provided by upstream
+    velib_python.VeDbusService. Adding imaginary convenience methods here would
+    conceal runtime failures on Venus OS.
+    """
+    def load(*, vedbus_available=True):
+        events = []
+        exports = []
+        package = "{{ module_name }}"
+        source = Path(__file__).resolve().parents[1] / "src" / package
 
-    def __init__(
-        self,
-        service_name: str,
-        supported_services: Optional[List[str]] = None,
-    ) -> None:
-        self._service_name = service_name
-        self._paths: Dict[str, Any] = {}
-        self._callbacks: Dict[str, List[Callable]] = {}
-        self._properties_changed_callbacks: Dict[str, List[Callable]] = {}
-        logger.debug("FakeVeDbusService created: %s", service_name)
+        class StrictVeDbusService:
+            def __init__(self, servicename, bus=None, register=None):
+                assert bus is None, "A GLib MainLoop is not a D-Bus connection"
+                self.exported_name = servicename
+                self.values = {}
+                self.register_count = 0
+                self.cleanup_count = 0
+                exports.append(self)
+                if register is None or register:
+                    self.register()
 
-    def get_path(self, path: str) -> Any:
-        return self._paths.get(path)
+            def register(self):
+                # Publish the bus name only after mandatory paths exist.
+                assert "/DeviceInstance" in self.values
+                assert "/ProductId" in self.values
+                assert "/Mgmt/ProcessName" in self.values
+                assert "/Mgmt/ProcessVersion" in self.values
+                assert "/Mgmt/Connection" in self.values
+                self.register_count += 1
+                events.append("register")
 
-    def set_path(self, path: str, value: Any) -> bool:
-        self._paths[path] = value
-        return True
+            def add_path(
+                self, path, value, description="", writeable=False,
+                onchangecallback=None, gettextcallback=None,
+            ):
+                assert path not in self.values, "Existing paths use item assignment"
+                self.values[path] = value
 
-    def add_path(
-        self,
-        path: str,
-        value: Any,
-        gettext_callback: Optional[Callable] = None,
-        writeable_callback: Optional[Callable] = None,
-        on_value_changed: Optional[Callable] = None,
-    ) -> None:
-        self._paths[path] = value
-        if on_value_changed:
-            self._properties_changed_callbacks.setdefault(path, []).append(on_value_changed)
-        logger.debug("FakeVeDbusService.add_path %s = %s", path, value)
+            def __contains__(self, path):
+                return path in self.values
 
-    def update_path(self, path: str, value: Any) -> bool:
-        old = self._paths.get(path)
-        if old == value:
-            return False
-        self._paths[path] = value
-        for cb in self._properties_changed_callbacks.get(path, []):
-            cb(path, value)
-        for cb in self._properties_changed_callbacks.get("*", []):
-            cb(path, value)
-        return True
+            def __getitem__(self, path):
+                return self.values[path]
 
-    def register_callback(self, path: str, callback: Callable) -> None:
-        self._callbacks.setdefault(path, []).append(callback)
+            def __setitem__(self, path, value):
+                assert path in self.values
+                self.values[path] = value
 
-    def quit(self) -> None:
-        logger.debug("FakeVeDbusService quit: %s", self._service_name)
+            def __del__(self):
+                self.cleanup_snapshot = self.values.copy()
+                self.values.clear()
+                self.cleanup_count += 1
+                events.append("cleanup")
 
+        class MainLoop:
+            def run(self):
+                assert exports[-1].register_count == 1
+                assert exports[-1].values["/Connected"] == 1
+                events.append("loop.run")
 
-# ---------------------------------------------------------------------------
-# dbus mock
-# ---------------------------------------------------------------------------
+            def quit(self):
+                events.append("loop.quit")
 
-class DBusException(Exception):
-    """Minimal dbus Exception stand-in."""
-    pass
+        def dbus_main_loop(*, set_as_default=False):
+            assert set_as_default
+            events.append("dbus.mainloop")
 
+        dbus = ModuleType("dbus")
+        dbus.__path__ = []
+        dbus_mainloop = ModuleType("dbus.mainloop")
+        dbus_mainloop.__path__ = []
+        glib = ModuleType("dbus.mainloop.glib")
+        glib.DBusGMainLoop = dbus_main_loop
+        gi = ModuleType("gi")
+        gi.__path__ = []
+        repository = ModuleType("gi.repository")
+        repository.GLib = SimpleNamespace(MainLoop=MainLoop)
+        vedbus = ModuleType("vedbus")
+        vedbus.VeDbusService = StrictVeDbusService
+        for name, module in {
+            "dbus": dbus,
+            "dbus.mainloop": dbus_mainloop,
+            "dbus.mainloop.glib": glib,
+            "gi": gi,
+            "gi.repository": repository,
+            "vedbus": vedbus if vedbus_available else None,
+        }.items():
+            monkeypatch.setitem(sys.modules, name, module)
 
-class DBus:
-    """Minimal dbus stand-in."""
+        def import_source(filename, name):
+            spec = importlib.util.spec_from_file_location(name, source / filename)
+            module = importlib.util.module_from_spec(spec)
+            monkeypatch.setitem(sys.modules, name, module)
+            spec.loader.exec_module(module)
+            return module
 
-    @staticmethod
-    def get_bus() -> "DBus":
-        return DBus()
+        service = import_source("service.py", f"{package}._platform_service")
+        monkeypatch.setitem(sys.modules, f"{package}.service", service)
+        cli = import_source("__main__.py", f"{package}._platform_main")
+        return SimpleNamespace(
+            service=service, cli=cli, exports=exports, events=events,
+            base=StrictVeDbusService,
+        )
 
-    def get_object(self, name: str, path: str) -> Any:
-        return DBusObject()
-
-    def call_blocking(self, *args, **kwargs) -> Any:  # type: ignore[no-untyped-def]
-        return None
-
-
-class DBusObject:
-    """Minimal dbus ObjectProxy stand-in."""
-
-    def get_async(self, *args, **kwargs) -> Any:  # type: ignore[no-untyped-def]
-        return None
-
-    def set_async(self, *args, **kwargs) -> Any:  # type: ignore[no-untyped-def]
-        return None
-
-
-dbus = DBus()  # type: ignore[assignment]
-
-
-# ---------------------------------------------------------------------------
-# GLib mainloop mock
-# ---------------------------------------------------------------------------
-
-class DBusGMainLoop:
-    """Minimal DBusGMainLoop stand-in."""
-
-    def __init__(self) -> None:
-        pass
-
-
-class GLib:
-    """Minimal GLib stand-in."""
-
-    class MainLoop:
-        def __init__(self, context: Optional[Any] = None) -> None:
-            self._running = False
-
-        def run(self) -> None:
-            self._running = True
-
-        def quit(self) -> None:
-            self._running = False
-
-        @property
-        def is_running(self) -> bool:
-            return self._running
-
-    class Source:
-        pass
-
-    @staticmethod
-    def idle_add(callback: Callable, *args: Any, **kwargs: Any) -> int:  # type: ignore[no-untyped-def]
-        logger.debug("GLib.idle_add called (no-op in fake)")
-        return 0
-
-    @staticmethod
-    def timeout_add(interval_ms: int, callback: Callable, *args: Any, **kwargs: Any) -> int:  # type: ignore[no-untyped-def]
-        logger.debug("GLib.timeout_add called (no-op in fake)")
-        return 0
-
-
-# ---------------------------------------------------------------------------
-# makeDbusMethod helper (used in some services)
-# ---------------------------------------------------------------------------
-
-def makeDbusMethod(signature_in: str, signature_out: str, callback: Callable) -> Callable:
-    """Wrap a callback as a dbus method."""
-    return callback
-
-
-def makeDbusProperty(getter: Optional[Callable] = None, setter: Optional[Callable] = None) -> Any:
-    """Wrap getters/setters as a dbus property."""
-    return None
+    return load

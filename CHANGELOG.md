@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Import and initialize the real Venus OS `VeDbusService`, register only after
+  creating paths, update existing bus items and release the service on shutdown.
+- Pass the CLI instance correctly and add its service-name suffix only once.
+  Reject unsupported runtime device types while retaining `generic`.
+- Initialize tank capacity and fluid type from tank configuration instead of
+  battery settings. Tank capacity is explicitly in cubic metres, defaulting to
+  1 m³; review older tank configuration values before regenerating.
+- Recompute battery power from the latest voltage and current after separate
+  updates, including MQTT messages and zero values. Missing readings remain
+  unknown until both inputs are available.
+- Exercise platform startup, missing dependencies and partial telemetry with
+  generated regression tests in the existing CI gate.
+
+### Upgrade
+
+Generate into a fresh directory and compare against your application. Existing
+generated applications are not updated automatically. Verify the platform library
+and hardware behavior on the intended GX device before deployment.
+
 ## [0.1.3] - 2026-10-17
 
 ### Changed

@@ -21,6 +21,13 @@ certificate and acceptance of a trusted RSA 3072 certificate at security level 3
 They send no MQTT traffic and require the OpenSSL CLI. CI supplies this tool;
 a developer machine without it records an explicit skipped test.
 
+Generated tests also exercise the successful platform-import branch using a
+strict `VeDbusService` test double: constructor arguments, registration order,
+existing-path updates, callbacks, shutdown and CLI construction. Separate tests
+cover absent platform dependencies, tank settings and incremental battery
+telemetry through the MQTT bridge. These tests verify API use without connecting
+to a live D-Bus broker; they do not replace target-device acceptance.
+
 CI also runs CodeQL for Python/Actions, dependency review, Bandit and Trivy for
 high/critical dependencies, secrets and configuration. Generated Python must be
 scanned explicitly because the maintained source templates have `.j2` suffixes.

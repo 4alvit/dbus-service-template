@@ -4,12 +4,13 @@ D-Bus Service Core - {{ class_name }}Service
 ============================================================
 
 Core D-Bus service implementation using VeDbusService.
-Handles D-Bus paths, signals, methods, and DVCC integration.
+Handles D-Bus paths, signals, lifecycle, and DVCC integration.
 """
 
 from __future__ import annotations
 
 import logging
+import math
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -33,6 +34,8 @@ try:
     import dbus
     from dbus.mainloop.glib import DBusGMainLoop
     from gi.repository import GLib
+    from vedbus import VeDbusService
+
     VEDBUS_AVAILABLE = True
 except ImportError:
     VEDBUS_AVAILABLE = False
@@ -42,6 +45,15 @@ except ImportError:
     GLib = None
 
 logger = logging.getLogger(__name__)
+
+SUPPORTED_DEVICE_TYPES = (
+    "battery", "pv_inverter", "grid_meter", "tank", "temperature", "generic",
+)
+
+
+def _validate_device_type(device_type: str) -> None:
+    if device_type not in SUPPORTED_DEVICE_TYPES:
+        raise ValueError(f"Unsupported device type: {device_type!r}")
 
 # D-Bus path constants
 _PATH_CONNECTED = "/Connected"
@@ -77,7 +89,6 @@ class {{ class_name }}Service(VeDbusService):
     Provides:
     - Standard Victron D-Bus paths (DeviceInstance, ProductId, etc.)
     - Signal emission for value changes
-    - Method handlers for D-Bus methods
     - DVCC integration hooks
     - Alarm management
     - Configuration persistence
@@ -90,7 +101,12 @@ class {{ class_name }}Service(VeDbusService):
         instance: int = {{ service_instance }},
         service_name: str = "{{ service_name }}",
     ) -> None:
-        """Initialize the D-Bus service."""
+        """Initialize paths; call start() to publish the service on D-Bus."""
+        self._dbus_initialized = False
+        _validate_device_type(device_type)
+        self._started = False
+        self._shutdown = False
+        self._initializing = True
         if not VEDBUS_AVAILABLE:
             logger.warning("VeDbusService not available - running in mock mode")
             self._mock_mode = True
@@ -107,19 +123,18 @@ class {{ class_name }}Service(VeDbusService):
             self._paths: dict[str, Any] = {}
             self._callbacks: dict[str, list[Callable]] = {}
         else:
-            super().__init__(self.service_name, GLib.MainLoop())
+            super().__init__(self.service_name, register=False)
+            self._dbus_initialized = True
             self._callbacks = {}
 
         # Service state
         self._connected = False
-        self._callbacks_registered = False
         self._alarms: dict[str, int] = {}
 
         # Initialize standard paths
         self._init_standard_paths()
 
-        # Register callbacks
-        self._register_callbacks()
+        self._initializing = False
 
         logger.info(f"Initialized {{ class_name }}Service: {self.service_name}")
 
@@ -132,6 +147,9 @@ class {{ class_name }}Service(VeDbusService):
         dev = self.config.device
 
         paths = {
+            "/Mgmt/ProcessName": str(Path(__file__).resolve()),
+            "/Mgmt/ProcessVersion": dev.firmware_version,
+            "/Mgmt/Connection": "MQTT",
             _PATH_MODEL: dev.model,
             _PATH_FIRMWARE_VERSION: dev.firmware_version,
             _PATH_HARDWARE_VERSION: dev.hardware_version,
@@ -140,7 +158,7 @@ class {{ class_name }}Service(VeDbusService):
             _PATH_DEVICE_INSTANCE: self.instance,
             _PATH_PRODUCT_ID: dev.product_id,
             _PATH_PRODUCT_NAME: dev.product_name,
-            _PATH_CONNECTED: 1,
+            _PATH_CONNECTED: 0,
         }
 
         for path, value in paths.items():
@@ -170,9 +188,9 @@ class {{ class_name }}Service(VeDbusService):
         paths = {
             "/Soc": self.config.initial_soc,
             "/Capacity": self.config.capacity_ah,
-            "/Dc/0/Voltage": 0.0,
-            "/Dc/0/Current": 0.0,
-            "/Dc/0/Power": 0.0,
+            "/Dc/0/Voltage": None,
+            "/Dc/0/Current": None,
+            "/Dc/0/Power": None,
             "/Dc/0/Temperature": 0.0,
             "/Dc/0/ConsumedAmphours": 0.0,
             "/BatteryState": 0,  # 0=External, 1=Internal
@@ -239,8 +257,8 @@ class {{ class_name }}Service(VeDbusService):
         """Initialize tank-specific D-Bus paths."""
         paths = {
             "/Level": 0.0,
-            "/FluidType": 0,
-            "/Capacity": self.config.capacity_ah,
+            "/FluidType": self.config.tank.fluid_type,
+            "/Capacity": self.config.tank.capacity,  # cubic metres, per the D-Bus API
             "/Remaining": 0.0,
         }
         for path, value in paths.items():
@@ -255,36 +273,8 @@ class {{ class_name }}Service(VeDbusService):
         for path, value in paths.items():
             self.set_path(path, value)
 
-    def _register_callbacks(self) -> None:
-        """Register standard D-Bus callbacks."""
-        if self._mock_mode:
-            return
-
-        # Add path change callback
-        self.add_path_changed_callback(self._on_path_changed)
-
-        # Add method handlers
-        self._register_methods()
-
-        self._callbacks_registered = True
-
-    # =========================================================================
-    # D-Bus Method Handlers
-    # =========================================================================
-
-    def _register_methods(self) -> None:
-        """Register D-Bus method handlers."""
-        methods = {
-            "GetFirmwareVersion": self._method_get_firmware_version,
-            "GetSerial": self._method_get_serial,
-            "SetCustomName": self._method_set_custom_name,
-            "Reboot": self._method_reboot,
-            "FactoryReset": self._method_factory_reset,
-        }
-
-        for method_name, handler in methods.items():
-            self.add_method(method_name, handler)
-
+    # These are local helpers. VeDbusService exports BusItem methods itself;
+    # it does not provide a dynamic add_method API.
     def _method_get_firmware_version(self) -> str:
         """Get firmware version."""
         return self.config.device.firmware_version
@@ -314,17 +304,49 @@ class {{ class_name }}Service(VeDbusService):
     # =========================================================================
 
     def set_path(self, path: str, value: Any, **kwargs) -> bool:
-        """Set D-Bus path value."""
+        """Add a path once, or update its existing exported value."""
+        if self._shutdown:
+            return False
         try:
             if self._mock_mode:
                 self._paths[path] = value
-                self._emit_change(path, value)
+            elif path in self:
+                self[path] = value
             else:
                 super().add_path(path, value, **kwargs)
+            self._emit_change(path, value)
+            if (
+                not self._initializing
+                and self.device_type == "battery"
+                and path in {"/Dc/0/Voltage", "/Dc/0/Current"}
+            ):
+                self._refresh_battery_power()
             return True
         except Exception as e:
+            if self._initializing:
+                raise
             logger.error(f"Failed to set path {path}: {e}")
             return False
+
+    def _refresh_battery_power(self) -> None:
+        """Derive power only from two known, finite readings, including zero."""
+        voltage = self.get_path("/Dc/0/Voltage")
+        current = self.get_path("/Dc/0/Current")
+        readings = (voltage, current)
+        power = None
+        if all(
+            isinstance(value, int | float) and not isinstance(value, bool)
+            for value in readings
+        ):
+            try:
+                if all(math.isfinite(value) for value in readings):
+                    product = voltage * current
+                    if math.isfinite(product):
+                        power = product
+            except OverflowError:
+                # Oversized integers and overflowing products are unknown power.
+                pass
+        self.update_path("/Dc/0/Power", power)
 
     def get_path(self, path: str) -> Any:
         """Get D-Bus path value."""
@@ -341,10 +363,6 @@ class {{ class_name }}Service(VeDbusService):
         if current != value:
             return self.set_path(path, value)
         return False
-
-    def _on_path_changed(self, path: str, value: Any) -> None:
-        """Handle path change events."""
-        self._emit_change(path, value)
 
     def _emit_change(self, path: str, value: Any) -> None:
         """Emit change event to callbacks."""
@@ -444,12 +462,37 @@ class {{ class_name }}Service(VeDbusService):
         self._connected = connected
         self.update_path(_PATH_CONNECTED, 1 if connected else 0)
 
+    def start(self) -> None:
+        """Publish only after all mandatory and device-specific paths exist."""
+        if self._shutdown:
+            raise RuntimeError("Cannot restart a shut down D-Bus service")
+        if self._started:
+            return
+        self.set_connected(True)
+        try:
+            if not self._mock_mode:
+                self.register()
+        except Exception:
+            self.set_connected(False)
+            raise
+        self._started = True
+
     def shutdown(self) -> None:
-        """Graceful shutdown."""
+        """Disconnect and release the D-Bus name and exported objects once."""
+        if self._shutdown:
+            return
         logger.info("Shutting down D-Bus service")
         self.set_connected(False)
-        if not self._mock_mode:
-            self.quit()
+        self._shutdown = True
+        self._started = False
+        self.__del__()
+
+    def __del__(self) -> None:
+        # Upstream documents __del__ as its explicit deregistration API.
+        # Guard construction failures and repeated signal/finally cleanup.
+        if getattr(self, "_dbus_initialized", False):
+            super().__del__()
+            self._dbus_initialized = False
 
     # =========================================================================
     # Battery-specific helpers
@@ -466,10 +509,9 @@ class {{ class_name }}Service(VeDbusService):
     ) -> None:
         """Update battery data from telemetry."""
         if voltage is not None:
-            self.update_path("/Dc/0/Voltage", voltage)
+            self.set_path("/Dc/0/Voltage", voltage)
         if current is not None:
-            self.update_path("/Dc/0/Current", current)
-            self.update_path("/Dc/0/Power", voltage * current if voltage else 0)
+            self.set_path("/Dc/0/Current", current)
         if soc is not None:
             self.update_path("/Soc", soc)
         if temperature is not None:
@@ -549,6 +591,7 @@ class MockDbusService:
     """Mock D-Bus service for local development without Venus OS."""
 
     def __init__(self, config: Config, device_type: str, instance: int) -> None:
+        _validate_device_type(device_type)
         self.config = config
         self.device_type = device_type
         self.instance = instance

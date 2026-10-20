@@ -159,7 +159,7 @@ class TankConfig(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="TANK_")
 
-    capacity: float = 1000.0
+    capacity: float = 1.0  # Cubic metres, matching the tank D-Bus /Capacity path.
     fluid_type: int = 0  # 0=Fuel, 1=Fresh water, 2=Waste water, 3=Live well, 4=Oil, 5=Black water
     level_min: float = 0.0
     level_max: float = 100.0

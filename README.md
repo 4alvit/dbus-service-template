@@ -50,6 +50,13 @@ separate reviewed license-template change.
 - Generated `service.py` exposes standard D-Bus identity paths and device-specific
   values. `set_path()` changes a path and callbacks publish corresponding values.
   The MQTT bridge maps telemetry and `/set` topics to configured D-Bus paths.
+- The CLI requires the real `dbus`, GLib and `vedbus` libraries. It creates all
+  service paths before registering the bus name. The in-memory fallback is for
+  tests and direct library use; the CLI exits when platform dependencies are absent.
+- Battery voltage, current and derived power start as unknown. Updating voltage
+  or current recomputes power from both latest readings, including zero readings.
+  Tank `tank.capacity`, `/Capacity` and `/Remaining` use cubic metres (1 m³ =
+  1000 litres); battery capacity uses amp-hours.
 - Credentialed MQTT requires TLS. TLS verifies the server hostname and certificate
   chain, uses TLS 1.2 or later and forward-secret modern ciphers at OpenSSL security level 3 (normally RSA 3072 or ECC 256-bit certificates). Plaintext MQTT
   remains available only for credential-free, isolated test/local networks.
