@@ -1,13 +1,17 @@
 # Tests for {{ class_name }}Service
 
-import pytest
-from unittest.mock import Mock, MagicMock, patch
-from pathlib import Path
+from unittest.mock import Mock, patch
 
-from {{ module_name }}.config import Config, MQTTConfig, DeviceConfig, load_config
+import pytest
+
+from {{ module_name }}.config import Config, MQTTConfig, load_config
 from {{ module_name }}.models import (
-    BatteryData, PVInverterData, GridMeterData,
-    TankData, TemperatureData, DeviceType, ServiceStatus
+    BatteryData,
+    GridMeterData,
+    PVInverterData,
+    ServiceStatus,
+    TankData,
+    TemperatureData,
 )
 from {{ module_name }}.service import {{ class_name }}Service
 
@@ -184,7 +188,7 @@ class TestService:
         assert service.get_path("/DeviceInstance") == {{ service_instance }}
         assert service.get_path("/ProductId") == config.device.product_id
         assert service.get_path("/ProductName") == config.device.product_name
-        assert service.get_path("/Connected") == 1
+        assert service.get_path("/Connected") == 0
 
     def test_update_path(self, config):
         """Test updating D-Bus paths."""
@@ -371,6 +375,205 @@ class TestGetDataModel:
         model = get_data_model("unknown")
         from typing import get_origin
         assert get_origin(model) is dict
+
+
+class TestRuntimeRegressions:
+    """Exercise generated applications beyond the dependency-free mock path."""
+
+    @pytest.mark.parametrize("device_type", [
+        "generic", "battery", "tank", "temperature", "pv_inverter", "grid_meter",
+    ])
+    def test_venus_dependency_branch_and_service_lifecycle(self, platform_runtime, device_type):
+        runtime = platform_runtime()
+        assert runtime.service.VEDBUS_AVAILABLE is True
+        assert issubclass(runtime.service.{{ class_name }}Service, runtime.base)
+        service = runtime.service.{{ class_name }}Service(
+            Config(), device_type=device_type, instance=42,
+        )
+        assert service.get_path("/DeviceInstance") == 42
+        assert service.register_count == 0
+        assert service.get_path("/Connected") == 0
+
+        service.start()
+        service.start()
+        assert service.register_count == 1
+        assert service.connected is True
+        assert service.get_path("/Connected") == 1
+
+        callback = Mock()
+        service.register_callback("/CustomName", callback)
+        assert service.update_path("/CustomName", "Updated device") is True
+        assert service.update_path("/CustomName", "Updated device") is False
+        callback.assert_called_once_with("/CustomName", "Updated device")
+        assert service.get_path("/CustomName") == "Updated device"
+
+        service.shutdown()
+        service.shutdown()
+        assert service.cleanup_count == 1
+        assert service.connected is False
+        assert service.cleanup_snapshot["/Connected"] == 0
+        assert service.get_path("/Connected") is None
+        with pytest.raises(RuntimeError):
+            service.start()
+
+    def test_cli_starts_actual_service_with_configurable_mqtt_port(
+        self, platform_runtime, monkeypatch, tmp_path,
+    ):
+        import sys
+        from types import ModuleType
+
+        runtime = platform_runtime()
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(sys, "argv", [
+            "{{ module_name }}", "--instance", "42", "--device-type", "generic",
+            "--service-name", "com.victronenergy.test", "--mqtt-port", "28883",
+        ])
+        monkeypatch.setattr(runtime.cli, "setup_signals", lambda *args: None)
+        bridges = []
+
+        class Bridge:
+            def __init__(self, config, service):
+                self.config = config
+                self.service = service
+                bridges.append(self)
+
+            def connect(self):
+                runtime.events.append("mqtt.connect")
+
+            def disconnect(self):
+                runtime.events.append("mqtt.disconnect")
+
+        mqtt_module = ModuleType("{{ module_name }}.mqtt_bridge")
+        mqtt_module.MQTTBridge = Bridge
+        monkeypatch.setitem(sys.modules, "{{ module_name }}.mqtt_bridge", mqtt_module)
+
+        assert runtime.cli.main() == 0
+        assert len(runtime.exports) == 1
+        service = runtime.exports[0]
+        assert service.exported_name == "com.victronenergy.test.generic_42"
+        assert service.cleanup_snapshot["/DeviceInstance"] == 42
+        assert service.cleanup_snapshot["/Connected"] == 0
+        assert service.get_path("/DeviceInstance") is None
+        assert service.register_count == 1
+        assert service.cleanup_count == 1
+        assert runtime.events.index("dbus.mainloop") < runtime.events.index("register")
+        assert runtime.events.index("register") < runtime.events.index("loop.run")
+        assert runtime.events.index("loop.run") < runtime.events.index("cleanup")
+{% if cookiecutter.mqtt_enabled %}
+        assert len(bridges) == 1
+        assert bridges[0].config.port == 28883
+        assert bridges[0].service is service
+        assert "mqtt.disconnect" in runtime.events
+{% else %}
+        assert bridges == []
+{% endif %}
+
+    def test_missing_vedbus_prevents_cli_startup(self, platform_runtime, monkeypatch):
+        import sys
+
+        runtime = platform_runtime(vedbus_available=False)
+        assert runtime.service.VEDBUS_AVAILABLE is False
+        assert runtime.cli.VEDBUS_AVAILABLE is False
+        monkeypatch.setattr(sys, "argv", ["{{ module_name }}"])
+        with pytest.raises(SystemExit) as error:
+            runtime.cli.main()
+        assert error.value.code == 1
+        assert runtime.exports == []
+        assert "loop.run" not in runtime.events
+
+    @pytest.mark.parametrize("device_type", ["unknown", "Battery", ""])
+    def test_invalid_runtime_device_type_rejected(self, device_type):
+        from {{ module_name }}.service import MockDbusService, create_service
+
+        config = Config()
+        with pytest.raises(ValueError):
+            {{ class_name }}Service(config, device_type=device_type)
+        with pytest.raises(ValueError):
+            MockDbusService(config, device_type=device_type, instance=0)
+        with pytest.raises(ValueError):
+            create_service(config, device_type=device_type, mock=True)
+
+    def test_cli_rejects_unknown_device_type(self, platform_runtime, monkeypatch):
+        import sys
+
+        runtime = platform_runtime()
+        monkeypatch.setattr(sys, "argv", [
+            "{{ module_name }}", "--device-type", "unknown",
+        ])
+        with pytest.raises(SystemExit) as error:
+            runtime.cli.parse_args()
+        assert error.value.code == 2
+        assert runtime.exports == []
+
+    def test_generic_device_remains_supported(self):
+        from {{ module_name }}.service import create_service
+
+        assert {{ class_name }}Service(Config(), device_type="generic").device_type == "generic"
+        assert create_service(Config(), device_type="generic", mock=True).device_type == "generic"
+
+    def test_tank_uses_tank_capacity_in_cubic_metres_and_fluid_type(self):
+        config = Config(
+            battery={"capacity_ah": 321.0},
+            tank={"capacity": 1.25, "fluid_type": 2},
+        )
+        service = {{ class_name }}Service(config, device_type="tank")
+        assert service.get_path("/Capacity") == 1.25
+        assert service.get_path("/FluidType") == 2
+
+    @pytest.mark.parametrize("first_sample", [{"voltage": 48.0}, {"current": 2.0}])
+    def test_battery_power_unknown_until_both_samples_exist(self, first_sample):
+        service = {{ class_name }}Service(Config(), device_type="battery")
+        assert service.get_path("/Dc/0/Voltage") is None
+        assert service.get_path("/Dc/0/Current") is None
+        assert service.get_path("/Dc/0/Power") is None
+        service.update_battery_data(**first_sample)
+        assert service.get_path("/Dc/0/Power") is None
+        service.update_battery_data(soc=75.0)
+        assert service.get_path("/Dc/0/Power") is None
+
+    @pytest.mark.parametrize("on_platform", [False, True], ids=["mock", "venus"])
+    @pytest.mark.parametrize("invalid", [
+        None, "bad", True, float("nan"), float("inf"), 10 ** 400,
+    ], ids=["unknown", "text", "boolean", "nan", "infinity", "overflow"])
+    def test_battery_invalid_voltage_clears_stale_power(
+        self, platform_runtime, on_platform, invalid,
+    ):
+        service_type = {{ class_name }}Service
+        if on_platform:
+            service_type = platform_runtime().service.{{ class_name }}Service
+        service = service_type(Config(), device_type="battery")
+        service.update_battery_data(voltage=48.0, current=2.0)
+        assert service.get_path("/Dc/0/Power") == 96.0
+        assert service.set_path("/Dc/0/Voltage", invalid) is True
+        assert service.get_path("/Dc/0/Power") is None
+        service.update_battery_data(voltage=50.0)
+        assert service.get_path("/Dc/0/Power") == 100.0
+
+    def test_battery_power_recovers_after_an_unknown_sample(self):
+        service = {{ class_name }}Service(Config(), device_type="battery")
+        service.update_battery_data(voltage=48.0, current=2.0)
+        service.update_path("/Dc/0/Voltage", None)
+        assert service.get_path("/Dc/0/Power") is None
+        service.update_battery_data(current=3.0)
+        assert service.get_path("/Dc/0/Power") is None
+        service.update_battery_data(voltage=50.0)
+        assert service.get_path("/Dc/0/Power") == 150.0
+
+    def test_battery_power_tracks_partial_updates_and_zero(self):
+        service = {{ class_name }}Service(Config(), device_type="battery")
+        samples = [
+            ({"voltage": 48.0, "current": 2.0}, 96.0),
+            ({"current": 3.0}, 144.0),
+            ({"voltage": 50.0}, 150.0),
+            ({"current": 0.0}, 0.0),
+            ({"current": -2.0}, -100.0),
+            ({"voltage": 0.0}, 0.0),
+            ({"voltage": 12.0}, -24.0),
+            ({"soc": 80.0}, -24.0),
+        ]
+        for update, power in samples:
+            service.update_battery_data(**update)
+            assert service.get_path("/Dc/0/Power") == power, update
 
 
 if __name__ == "__main__":

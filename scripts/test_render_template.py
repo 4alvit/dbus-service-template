@@ -48,6 +48,7 @@ class RenderTemplateTests(unittest.TestCase):
             "service_instance": [-1, 256],
             "mqtt_enabled": ["false"],
             "license_type": ["Apache-2.0"],
+            "device_type": ["unknown", "Battery"],
         }
         with TemporaryDirectory() as directory:
             source, output = Path(directory) / "source", Path(directory) / "output"
@@ -58,6 +59,14 @@ class RenderTemplateTests(unittest.TestCase):
                     with self.subTest(key=key, value=value), self.assertRaises(ValueError):
                         render_tree(source, output, render_environment(), {**DEFAULT_CTX, key: value})
                     self.assertFalse(output.exists())
+
+    def test_generic_device_type_is_supported(self):
+        with TemporaryDirectory() as directory:
+            source, output = Path(directory) / "source", Path(directory) / "output"
+            source.mkdir()
+            (source / "app.py.j2").write_text("DEVICE = '{{ device_type }}'\n")
+            render_tree(source, output, render_environment(), DEFAULT_CTX)
+            self.assertEqual((output / "app.py").read_text(), "DEVICE = 'generic'\n")
 
     def test_malformed_answers_do_not_silently_use_defaults(self):
         with self.assertRaisesRegex(ValueError, "key: value"):

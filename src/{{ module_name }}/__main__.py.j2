@@ -22,33 +22,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# Venus OS velib_python path (required on Venus OS)
-VELIB_PATHS = [
-    "/opt/victronenergy/dbus-systemcalc-py/ext/velib_python",
-    "/opt/victronenergy/velib_python",
-]
-
-for p in VELIB_PATHS:
-    if Path(p).exists():
-        sys.path.insert(0, p)
-        break
-
-# Optional imports - available on Venus OS
-try:
-    import dbus
-    from dbus.mainloop.glib import DBusGMainLoop
-    from gi.repository import GLib
-    VEDBUS_AVAILABLE = True
-except ImportError:
-    VEDBUS_AVAILABLE = False
-    VeDbusService = None
-    dbus = None
-    DBusGMainLoop = None
-    GLib = None
-
-# Local imports must follow Venus OS platform path setup.
-from .config import Config, load_config  # noqa: E402
-from .service import {{ class_name }}Service  # noqa: E402
+from .config import Config, load_config
+from .service import (
+    SUPPORTED_DEVICE_TYPES,
+    VEDBUS_AVAILABLE,
+    DBusGMainLoop,
+    GLib,
+    {{ class_name }}Service,
+)
 
 __version__ = "0.1.0"
 
@@ -119,6 +100,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--device-type",
         default="{{ device_type }}",
+        choices=SUPPORTED_DEVICE_TYPES,
         help="Victron device type for D-Bus paths",
     )
 
@@ -161,19 +143,15 @@ def create_dbus_service(config: Config, args: argparse.Namespace) -> Any:
     # Set up D-Bus main loop
     DBusGMainLoop(set_as_default=True)
 
-    # Create service name with instance
-    service_name = f"{args.service_name}{args.instance}"
-
-    logger.info(f"Registering D-Bus service: {service_name}")
-
-    # Create the service
+    # The service constructor adds the device and instance suffix once.
     service = {{ class_name }}Service(
-        service_name=service_name,
-        device_instance=args.instance,
+        service_name=args.service_name,
+        instance=args.instance,
         device_type=args.device_type,
         config=config,
     )
 
+    logger.info(f"Prepared D-Bus service: {service.service_name}")
     return service
 
 

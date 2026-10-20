@@ -7,6 +7,13 @@ independent release version.
 
 Use Python {{ python_version }} and install the project with `pip install -e '.[dev]'`.
 Run `pytest tests/` before configuring a real broker or a Venus OS device.
+
+The CLI requires the firmware's `dbus`, GLib and `vedbus` dependencies and exits
+if they are missing. It registers the D-Bus name after creating the service paths.
+Battery voltage, current and derived power remain unknown until telemetry arrives;
+power uses the latest voltage and current, including zero values.
+For tanks, configure `tank.capacity` in cubic metres (1 m³ = 1000 litres).
+MQTT tank capacity and remaining-volume values use the same units.
 Device libraries and hardware acceptance must be supplied and checked separately.
 The generated installer is not executed by template rendering or template release tests.
 

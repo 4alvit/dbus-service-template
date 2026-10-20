@@ -17,6 +17,27 @@ from {{ module_name }}.service import {{ class_name }}Service
 class TestMQTTBridge:
     """Test MQTT bridge functionality."""
 
+    @pytest.mark.parametrize("readings", [
+        [("voltage", b"48", None), ("current", b"2", 96),
+         ("voltage", b"50", 100), ("current", b"0", 0)],
+        [("current", b"-2", None), ("voltage", b"48", -96),
+         ("voltage", b"0", 0), ("current", b"3", 0)],
+    ])
+    def test_partial_battery_messages_recompute_power(self, readings):
+        """Real bridge dispatch updates the real service without a broker."""
+        config = Config()
+        service = {{ class_name }}Service(config, device_type="battery")
+        bridge = MQTTBridge(config.mqtt, service)
+
+        assert service.get_path("/Dc/0/Power") is None
+        for field, payload, expected_power in readings:
+            message = Mock(
+                topic=f"{config.mqtt.topic_prefix}/{field}", payload=payload
+            )
+            bridge._on_message(None, None, message)
+            assert service.get_path("/Dc/0/Power") == expected_power
+        assert bridge._errors == 0
+
     @pytest.mark.parametrize("clean_session", [True, False])
     def test_real_client_construction(self, clean_session):
         """Build a real Paho client and real service without connecting to a broker."""
