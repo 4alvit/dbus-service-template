@@ -103,6 +103,10 @@ class MQTTBridge:
                 f"{prefix}/capacity": "/Capacity",
                 f"{prefix}/remaining": "/Remaining",
             }
+        elif self.db.device_type == "temperature":
+            self._topic_to_path = {
+                f"{prefix}/temperature": "/Temperature",
+            }
         else:
             # Generic mapping
             self._topic_to_path = {

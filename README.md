@@ -50,6 +50,9 @@ separate reviewed license-template change.
 - Generated `service.py` exposes standard D-Bus identity paths and device-specific
   values. `set_path()` changes a path and callbacks publish corresponding values.
   The MQTT bridge maps telemetry and `/set` topics to configured D-Bus paths.
+  Temperature mode maps `<topic_prefix>/temperature` to `/Temperature`;
+  `<topic_prefix>/temperature/set` uses the same path. Generic mode retains
+  `<topic_prefix>/value` and `<topic_prefix>/unit` for `/Value` and `/Unit`.
 - The CLI requires the real `dbus`, GLib and `vedbus` libraries. It creates all
   service paths before registering the bus name. The in-memory fallback is for
   tests and direct library use; the CLI exits when platform dependencies are absent.

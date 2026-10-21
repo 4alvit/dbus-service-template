@@ -14,6 +14,9 @@ Battery voltage, current and derived power remain unknown until telemetry arrive
 power uses the latest voltage and current, including zero values.
 For tanks, configure `tank.capacity` in cubic metres (1 m³ = 1000 litres).
 MQTT tank capacity and remaining-volume values use the same units.
+In temperature mode, MQTT `<topic_prefix>/temperature` updates `/Temperature`;
+the corresponding `/set` topic uses the same path. Generic mode keeps
+`<topic_prefix>/value` and `<topic_prefix>/unit` mapped to `/Value` and `/Unit`.
 Device libraries and hardware acceptance must be supplied and checked separately.
 The generated installer is not executed by template rendering or template release tests.
 
