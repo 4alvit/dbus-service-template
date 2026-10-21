@@ -17,6 +17,47 @@ from {{ module_name }}.service import {{ class_name }}Service
 class TestMQTTBridge:
     """Test MQTT bridge functionality."""
 
+    @pytest.mark.parametrize("payload,expected", [(b"23.5", 23.5), (b"-4", -4), (b"0", 0)])
+    @pytest.mark.parametrize("suffix", ["", "/set"])
+    def test_temperature_messages_update_the_temperature_path(self, payload, expected, suffix):
+        """Exercise rendered subscription and dispatch with synthetic MQTT and mock D-Bus."""
+        config = Config()
+        config.mqtt.ha_discovery = False
+        with patch("{{ module_name }}.service.VEDBUS_AVAILABLE", False):
+            service = {{ class_name }}Service(config, device_type="temperature")
+        try:
+            assert service._mock_mode
+            bridge = MQTTBridge(config.mqtt, service)
+            client = Mock()
+            bridge._on_connect(client, None, {}, 0)
+            topic = f"{config.mqtt.topic_prefix}/temperature{suffix}"
+            client.subscribe.assert_any_call(topic, qos=config.mqtt.qos)
+            bridge._on_message(None, None, Mock(topic=topic, payload=payload))
+            assert service.get_path("/Temperature") == expected
+            assert service.get_path("/Value") is None
+            assert bridge._errors == 0
+        finally:
+            service.shutdown()
+
+    def test_generic_messages_keep_the_value_and_unit_paths(self):
+        """The dedicated temperature mapping must not change generic device dispatch."""
+        config = Config()
+        with patch("{{ module_name }}.service.VEDBUS_AVAILABLE", False):
+            service = {{ class_name }}Service(config, device_type="generic")
+        try:
+            assert service._mock_mode
+            bridge = MQTTBridge(config.mqtt, service)
+            for field, payload in (("value", b"23.5"), ("unit", b"C")):
+                bridge._on_message(None, None, Mock(
+                    topic=f"{config.mqtt.topic_prefix}/{field}", payload=payload
+                ))
+            assert service.get_path("/Value") == 23.5
+            assert service.get_path("/Unit") == "C"
+            assert service.get_path("/Temperature") is None
+            assert bridge._errors == 0
+        finally:
+            service.shutdown()
+
     @pytest.mark.parametrize("readings", [
         [("voltage", b"48", None), ("current", b"2", 96),
          ("voltage", b"50", 100), ("current", b"0", 0)],

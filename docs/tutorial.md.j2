@@ -42,6 +42,11 @@ for operating limits, stale readings, malformed input and unauthorized commands.
 
 Copy `config.example.yaml` to `config.yaml`. Environment prefixes `DEVICE_`,
 `MQTT_`, `BATTERY_`, `PV_`, `GRID_`, `TANK_` and `TEMP_` override relevant fields.
+For temperature devices, publish the reading to `<topic_prefix>/temperature`
+to update `/Temperature`; `<topic_prefix>/temperature/set` writes the same path.
+Replace `<topic_prefix>` with `mqtt.topic_prefix` from your configuration.
+Generic devices continue to use the `/value` and `/unit` topics for `/Value`
+and `/Unit`; these generic topics do not update temperature devices.
 Use a broker with least-privilege topic ACLs. Credentials require `use_tls: true`;
 set the TLS port (usually 8883), and a CA file when using a private authority.
 Server hostname and chain verification stay enabled. Certificates must meet

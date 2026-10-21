@@ -1,9 +1,12 @@
 # Changelog
 
-## Unreleased
+## [0.1.4] - Unreleased
 
 ### Fixed
 
+- Map temperature-mode MQTT telemetry and `/set` messages to `/Temperature`,
+  with rendered runtime regressions for positive, negative and zero readings.
+  Generic `/Value` and `/Unit` mappings are unchanged.
 - Import and initialize the real Venus OS `VeDbusService`, register only after
   creating paths, update existing bus items and release the service on shutdown.
 - Pass the CLI instance correctly and add its service-name suffix only once.
@@ -22,6 +25,11 @@
 Generate into a fresh directory and compare against your application. Existing
 generated applications are not updated automatically. Verify the platform library
 and hardware behavior on the intended GX device before deployment.
+
+### Security
+
+The temperature topic uses the existing MQTT authentication and broker ACL policy.
+This fix does not add physical operating limits or authorize deployment.
 
 ## [0.1.3] - 2026-10-17
 
