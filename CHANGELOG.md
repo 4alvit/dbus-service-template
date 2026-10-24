@@ -28,6 +28,8 @@ and hardware behavior on the intended GX device before deployment.
 
 ### Security
 
+- Refresh filelock to 4.2.1, virtualenv to 21.14.13 and setuptools to 84.1.0 in the hash-locked template validation tools. Existing application pins and generated runtime code are unchanged.
+
 The temperature topic uses the existing MQTT authentication and broker ACL policy.
 This fix does not add physical operating limits or authorize deployment.
 
