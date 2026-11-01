@@ -40,6 +40,9 @@
         "member": "dbus-service-template/SOURCE_VERSION",
         "value": "package"
       }
+    ],
+    "required_build_receipts": [
+      "release-inputs-package.json"
     ]
   },
   "fuzzing": {
