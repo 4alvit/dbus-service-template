@@ -80,6 +80,16 @@ Run `bash scripts/ci.sh --install`, then `bash scripts/ci.sh` for the local lint
 renderer, generated-service and security checks. See [quality and build
 instructions](docs/quality-and-build.md) for complete commands and coverage scope.
 
+Pull requests and pushes that change only ordinary documentation use a reduced
+CI path. The shared classifier examines the complete change, and `CI gate`
+requires a successful classification plus the mandatory security checks.
+CodeQL and release security scanning still run. Renderer, generated-service
+and dependency checks are skipped only when the diff is proven to contain
+ordinary documentation; a skipped check is not evidence that those tests ran.
+Template inputs such as `docs/tutorial.md.j2`, source files, dependency locks,
+workflows, symlinks and file-mode changes retain full validation. Manual,
+scheduled and release qualification also keep the full path.
+
 [`SOURCE_VERSION`](SOURCE_VERSION) versions the template source separately from
 the generated application's `version` answer. [Releases](https://github.com/4alvit/dbus-service-template/releases)
 identify immutable tags; [CHANGELOG.md](CHANGELOG.md) explains changes and migration.
