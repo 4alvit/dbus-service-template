@@ -1,6 +1,48 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "local>victron-venus/venus-os-ci-toolkit:renovate-ci"
-  ]
+    "local>victron-venus/venus-os-ci-toolkit:renovate-fleet"
+  ],
+  "enabledManagers": [
+    "github-actions",
+    "custom.regex",
+    "custom.jsonata",
+    "pip_requirements",
+    "pip-compile"
+  ],
+  "pip_requirements": {
+    "managerFilePatterns": [
+      "/(^|/)requirements[^/]*\\.(txt|pip)$/"
+    ],
+    "ignorePaths": [
+      "**/vendor/**",
+      "**/node_modules/**",
+      "**/fixtures/**",
+      ".github/requirements-bandit-1.9.2.txt",
+      ".github/requirements-template.txt",
+      ".github/requirements-bandit-1.9.2.in",
+      ".github/requirements-template.in"
+    ]
+  },
+  "packageRules": [
+    {
+      "description": "Keep this explicitly versioned legacy Bandit fixture at its named version.",
+      "matchManagers": [
+        "pip-compile"
+      ],
+      "matchFileNames": [
+        ".github/requirements-bandit-1.9.2.in"
+      ],
+      "matchPackageNames": [
+        "bandit"
+      ],
+      "allowedVersions": "==1.9.2"
+    }
+  ],
+  "pip-compile": {
+    "managerFilePatterns": [
+      "/^\\.github/requirements\\-bandit\\-1\\.9\\.2\\.txt$/",
+      "/^\\.github/requirements\\-template\\.txt$/"
+    ]
+  }
 }
