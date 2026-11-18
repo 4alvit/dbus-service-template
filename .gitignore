@@ -62,3 +62,4 @@ config.yml
 .venv-ci/
 release-dist/
 bandit-results.json
+A*S.md
