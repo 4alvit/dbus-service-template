@@ -1,7 +1,34 @@
 # Changelog
 
-## [0.1.4] - Unreleased
+## [0.1.5] - Unreleased
 
+### Changed
+
+- keep local instruction files out of git.
+- add a navigation index for docs/.
+- add line-ending and language attributes.
+- isolate every auto-merge base edit (#99).
+- preserve merge identity and withdrawn auto-merge requests (#98).
+- use the shared regeneration procedure (#92).
+- classify governance guidance as documentation (#91).
+- retain documentation inputs and full release qualification (#90).
+- retain full release qualification and changelog validation (#89).
+- explain documentation-only validation and security checks (#88).
+
+### Upgrade
+
+Generate into a fresh directory and compare against your application. Existing
+generated applications are not updated automatically. Verify the platform library
+and hardware behavior on the intended GX device before deployment.
+
+### Security
+
+- Refresh filelock to 4.2.1, virtualenv to 21.14.13 and setuptools to 84.1.0 in the hash-locked template validation tools. Existing application pins and generated runtime code are unchanged.
+
+The temperature topic uses the existing MQTT authentication and broker ACL policy.
+This fix does not add physical operating limits or authorize deployment.
+
+## [0.1.4] - 2026-10-24
 ### Fixed
 
 - Map temperature-mode MQTT telemetry and `/set` messages to `/Temperature`,
